@@ -1,5 +1,5 @@
 # -*- coding: UTF-8 -*-
-# import sqlalchemy.sql.operators
+import sqlalchemy.sql.operators
 import re
 import shutil
 import sys
