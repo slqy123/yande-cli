@@ -1,10 +1,8 @@
 # -*- coding: UTF-8 -*-
-import sqlalchemy.sql.operators
 import re
 import shutil
 import sys
 
-from flask import Flask
 from sqlalchemy.sql import func
 from sqlalchemy import or_, not_
 from database import *
@@ -20,18 +18,9 @@ import time
 
 from yandeTime import YandeSpider, YandeId, YandeAll
 
-app = Flask(__name__)
-app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///test.db'
-app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
-
-db.init_app(app)
-app.app_context().push()
-ss = db.session
-
 root = "sdcard/ADM/.comic"
 
 
-# db.create_all(app=app)
 def call(command):
     return os.popen(command).read()
 
@@ -45,7 +34,7 @@ def update_star(file_name, trace_id):
     with open(file_name, encoding='utf-8') as fn:
         content = fn.read().split('\n')[1:-1]
     ids = set([int(s.split(' ')[1]) for s in content])
-    imgs = Image.query.filter(Image.history_id == trace_id).all()
+    imgs = ss.query(Image).filter(Image.history_id == trace_id).all()
     count = 0
     imgs2remove = []
     for img in imgs:
@@ -78,13 +67,13 @@ def push(amount):
     # last_id = History.query.order_by(History.date).all()[-1].end
     min_count = ss.query(func.min(Image.count)).filter(Image.star == Image.count).first()[0]
     print(f"min count = {min_count}")
-    # if not Image.query.filter(Image.id > last_id).all():
+    # if not ss.query(Image).filter(Image.id > last_id).all():
     #     last_id = 0
-    imgs = list(Image.query.filter(Image.star == Image.count,
-                                   # Image.id > last_id,
-                                   Image.count == min_count,
-                                   Image.history.has(finish=True)
-                                   ).limit(amount))
+    imgs = list(ss.query(Image).filter(Image.star == Image.count,
+                                       # Image.id > last_id,
+                                       Image.count == min_count,
+                                       Image.history.has(finish=True)
+                                       ).limit(amount))
     print(f"{len(imgs)} images in total")
 
     minId = imgs[0].id
@@ -101,15 +90,15 @@ def push(amount):
     ss.commit()
 
     target = f'{root}/{get_folder_name_from_trace(trace)}'
-    call(f'adb shell "mkdir {target}')
+    call(f'adb2 shell "mkdir {target}')
     with trange(length) as t:
         for i in t:
             img = imgs[i]
             img_id = get_id_from_file_name(img.name)
             t.set_description(f"id={img_id}")
-            call_res = call(f'adb push "{IMG_PATH}/{img.name}" "{target}/{img.name}"')
+            call_res = call(f'adb2 push "{IMG_PATH}/{img.name}" "{target}/{img.name}"')
             if '1 file pushed' in call_res:
-                size = int(re.search(r"(\d+) bytes", call_res).group(1))/MB
+                size = int(re.search(r"(\d+) bytes", call_res).group(1)) / MB
                 t.set_postfix(size=f"{round(size, 2)}MB")
             else:
                 print('error! :: ', call_res)
@@ -120,9 +109,9 @@ def push(amount):
 
 
 def history_select(_all):
-    history = History.query.filter(History.finish == False, History.id > 0).all()
+    history = ss.query(History).filter(History.finish == False, History.id > 0).all()
     for i, trace in enumerate(history):
-        print(f"[{i}]: pushed at {str(trace.date)} from {trace.start} to {trace.end}")
+        print(f"[{i}]:id={trace.id} pushed at {str(trace.date)} from {trace.start} to {trace.end}")
 
     if _all:
         return history
@@ -131,9 +120,10 @@ def history_select(_all):
         trace = history[index]
         return trace
 
+
 # def clear():
 #     trace = history_select(_all=False)
-#     Image.query.filter_by(history_id=trace.id).update({
+#     ss.query(Image).filter_by(history_id=trace.id).update({
 #         'history_id': 0
 #     })
 #     ss.delete(trace)
@@ -144,13 +134,13 @@ def update(_all=False):
         _trace.finish = True
         dir_name = get_folder_name_from_trace(_trace)
         target = f"{root}/{dir_name}"
-        call(f'adb shell "cd {target} && ls > out.txt && exit"')
-        call(f'adb pull {target}/out.txt ./')
-        call(f'adb shell "rm {target}/out.txt"')
+        call(f'adb2 shell "cd {target} && ls > out.txt && exit"')
+        call(f'adb2 pull {target}/out.txt ./')
+        call(f'adb2 shell "rm {target}/out.txt"')
 
         update_star('out.txt', _trace.id)
 
-        call(f'adb shell rm -rf {target}')
+        call(f'adb2 shell rm -rf {target}')
 
     if _all:
         input('are you sure?')
@@ -249,7 +239,7 @@ def download_yande_imgs():
 
 
 def test():
-    all_img = Image.query.all()
+    all_img = ss.query(Image).all()
     for img in all_img:
         res = os.path.isfile(os.path.join(IMG_PATH, img.name))
         if (not res) and img.star != -1:
@@ -259,7 +249,7 @@ def test():
 # TODO 这个还是可以优化一下
 
 if __name__ == '__main__':
-    device_list = call('adb devices')
+    device_list = call('adb2 devices')
     if DEVICE_ID not in device_list:
         print('no devices found!')
         sys.exit(-1)

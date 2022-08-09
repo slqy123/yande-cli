@@ -5,7 +5,7 @@ import re
 
 
 def get_id_from_url(url: str) -> int:
-    res = re.search(r"yande.re%20([0-9]+)%20", url)
+    res = re.search(r"yande.re%20(\d+)%20", url)
     return int(res.group(1))
 
 
@@ -14,9 +14,9 @@ def get_id_from_file_name(file_name: str) -> int:
     return int(file_name.split(' ')[1])
 
 
-def check_exists(obj: db.Model, **kwargs):
+def check_exists(obj: Base, **kwargs):
     # print(kwargs)
-    res = obj.query.filter_by(**kwargs).all()
+    res = ss.query(obj).filter_by(**kwargs).all()
     if len(res) == 0:
         return False
     if len(res) == 1:

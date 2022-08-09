@@ -1,17 +1,19 @@
 import json
 import os
+import sys
 
 import grequests
 import requests
 from lxml import html
 import datetime
 import time
-from subprocess import call, Popen
+from subprocess import call
 from pyperclip import copy
 import shutil
 import re
 
 
+# TODO 不依靠json文件，可以选择使用pickle来存储
 class YandeSpider:
     def __init__(self, tags=None, need_json=False, add_database_cb=None):
         '''mode 可选择 refresh, 定时更新  以及all, 下载全部'''
@@ -26,6 +28,7 @@ class YandeSpider:
         self.post_url = self.original_url + "/post.json"
         self.output_dir = "./_all/"
         self.add_database_cb = add_database_cb
+        self.failed_urls = []
         with open('infos.json') as f:
             self.settings = json.loads(f.read())
         if not tags:
@@ -138,4 +141,7 @@ if __name__ == '__main__':
         yande = YandeAll([tag])
     elif typ == 'id':
         yande = YandeId()
+    else:
+        print('unknown command.')
+        sys.exit(-1)
     yande.run()

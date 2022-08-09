@@ -1,38 +1,42 @@
-from exts import db
+from sqlalchemy import create_engine, Column, Integer, Text, ForeignKey, Date, Boolean
+from sqlalchemy.orm import sessionmaker, relationship
+from sqlalchemy.ext.declarative import declarative_base
 
-class Image(db.Model):
-    query: db.Query
+Base = declarative_base()
+engine = create_engine('sqlite:///test.db')
+ss = sessionmaker(bind=engine)()
+
+
+class Image(Base):
     __tablename__ = 'image'
-    id = db.Column(db.Integer, primary_key=True)
-    name = db.Column(db.Text, unique=True)
-    tags = db.relationship('Tag', secondary='images2tags', backref='Images')
-    star = db.Column(db.Integer, default=0)
-    count = db.Column(db.Integer, default=0)
-    url = db.Column(db.Text, default='')
-    history_id = db.Column(db.Integer, db.ForeignKey('history.id'), default=0)
-    history = db.relationship('History', backref='images')
+    id = Column(Integer, primary_key=True)
+    name = Column(Text, unique=True)
+    tags = relationship('Tag', secondary='images2tags', backref='Images')
+    star = Column(Integer, default=0)
+    count = Column(Integer, default=0)
+    url = Column(Text, default='')
+    history_id = Column(Integer, ForeignKey('history.id'), default=0)
+    history = relationship('History', backref='images')
 
-class Tag(db.Model):
-    query: db.Query
 
+class Tag(Base):
     __tablename__ = 'tag'
-    id = db.Column(db.Integer, primary_key=True, autoincrement=True)
-    name = db.Column(db.Text, unique=True)
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    name = Column(Text, unique=True)
 
 
-class Images2Tags(db.Model):
+class Images2Tags(Base):
     __tablename__ = 'images2tags'
-    id = db.Column(db.Integer, primary_key=True, autoincrement=True)
-    game_id = db.Column(db.Integer, db.ForeignKey('image.id'))
-    tag_id = db.Column(db.Integer, db.ForeignKey('tag.id'))
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    game_id = Column(Integer, ForeignKey('image.id'))
+    tag_id = Column(Integer, ForeignKey('tag.id'))
 
 
-class History(db.Model):
-    query: db.Query
+class History(Base):
     __tablename__ = 'history'
-    id = db.Column(db.Integer, primary_key=True, autoincrement=True)
-    date = db.Column(db.Date)
-    start = db.Column(db.Integer)
-    end = db.Column(db.Integer)
-    amount = db.Column(db.Integer)
-    finish = db.Column(db.Boolean, default=False)
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    date = Column(Date)
+    start = Column(Integer)
+    end = Column(Integer)
+    amount = Column(Integer)
+    finish = Column(Boolean, default=False)
