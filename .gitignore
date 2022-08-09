@@ -1,0 +1,13 @@
+.idea/
+__pycache__/
+del.txt
+demo.txt
+file_not_exists.txt
+infos.json
+notExists.txt
+out.txt
+test-bak.db
+test-bak2.db
+test.db
+test.ipynb
+test.py
