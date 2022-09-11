@@ -1,9 +1,10 @@
 from sqlalchemy import create_engine, Column, Integer, Text, ForeignKey, Date, Boolean
 from sqlalchemy.orm import sessionmaker, relationship
 from sqlalchemy.ext.declarative import declarative_base
-
+# from os import path
+# DB_PATH = path.split(__file__)[0] + '/test.db'
 Base = declarative_base()
-engine = create_engine('sqlite:///test.db')
+engine = create_engine(f'sqlite:///test.db')
 ss = sessionmaker(bind=engine)()
 
 

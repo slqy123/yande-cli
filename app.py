@@ -1,4 +1,7 @@
 # -*- coding: UTF-8 -*-
+import os;
+
+os.chdir(os.path.split(__file__)[0])
 import re
 import shutil
 import sys
@@ -9,11 +12,11 @@ from database import *
 from settings import *
 from datetime import date
 from tqdm import tqdm, trange
-
+import click
+import inquirer
 # from subprocess import call 重新定义了一个call函数，会返回输出的内容
 from utils import *
 
-import os
 import time
 
 from yandeTime import YandeSpider, YandeId, YandeAll
@@ -23,6 +26,18 @@ root = "sdcard/ADM/.comic"
 
 def call(command):
     return os.popen(command).read()
+
+
+def get_description_from_trace(trace):
+    trace_path = get_folder_name_from_trace(trace)
+    img_num = int(call(f'adb2 shell "cd {root}/{trace_path} && ls -l |grep ^-|wc -l"'))
+    return f"id={trace.id} pushed at {str(trace.date)} "\
+           f"from {trace.start} to {trace.end}({img_num}/{trace.amount})"
+
+
+@click.group()
+def main_group():
+    pass
 
 
 def update_star(file_name, trace_id):
@@ -46,78 +61,118 @@ def update_star(file_name, trace_id):
             if img.star == 0:
                 img.star = -1
                 imgs2remove.append(f'{IMG_PATH}/{img.name}')
-                print('delete', img.name)
+                print(CLEAR + 'delete', img.name, end="", flush=True)
             else:
-                print('filter' + img.name)
-    print(f'{count} images to be removed in total')
-    print("start removing files?")
-    input()
-    for path in imgs2remove:
-        if os.path.exists(path):
-            os.remove(path)
+                print(CLEAR + 'filter' + img.name, end='', flush=True)
+    print(f'\n{count} images to be removed in total')
+    print("start removing files?(Y/n)", end="", flush=True)
+    rm: str = input()
+    if rm.strip().lower() == 'y' or rm == '':
+        rm_success_flag = True
+        for path in imgs2remove:
+            if os.path.exists(path):
+                os.remove(path)
+            else:
+                print(f'file {path} not exists')
+                rm_success_flag = 1 if rm_success_flag is True else rm_success_flag + 1
+        
+        if rm_success_flag is True:
+            print('files remove successfully')
         else:
-            print(f'file {path} not exists')
-    ss.commit()
+            print(f'{rm_success_flag} files failed to delete')
+        
+        ss.commit()
 
 
-def push(amount):
-    # 想个办法解决多次push会重复的问题（目前用last_id解决）
-    # 可以加个字段(已用此方法解决)
+@click.command()
+def status():
+    total_num = ss.query(Image).count()
+    exist_num = ss.query(Image).filter(Image.star >= 0).count()
+    traces = ss.query(History).filter(History.finish == False).all()
 
-    # last_id = History.query.order_by(History.date).all()[-1].end
-    min_count = ss.query(func.min(Image.count)).filter(Image.star == Image.count).first()[0]
-    print(f"min count = {min_count}")
-    # if not ss.query(Image).filter(Image.id > last_id).all():
-    #     last_id = 0
-    imgs = list(ss.query(Image).filter(Image.star == Image.count,
-                                       # Image.id > last_id,
-                                       Image.count == min_count,
-                                       Image.history.has(finish=True)
-                                       ).limit(amount))
-    print(f"{len(imgs)} images in total")
+    import json
+    from datetime import date
+    with open('infos.json') as f:
+        settings = json.loads(f.read())
+    last_download_date = date.fromisoformat(settings['last'])
+    day_pass = date.today() - last_download_date
+    choices = []
+    for i, trace in enumerate(traces):
+        choices.append(f'[{i}]:{get_description_from_trace(trace=trace)}')
 
-    minId = imgs[0].id
-    maxId = imgs[-1].id
-    length = len(imgs)
-    today = date.today()
-    trace = History(
-        date=today,
-        start=minId,
-        end=maxId,
-        amount=length
-    )
-    ss.add(trace)
-    ss.commit()
+    print(f"{total_num} images in total, {exist_num} exists, {total_num - exist_num} are deleted")
+    print(f"{len(traces)} push histories are not updated, they are:")
+    print(*choices, sep='\n')
+    print(f'last download date is {last_download_date} which is {day_pass.days} days ago')
 
-    target = f'{root}/{get_folder_name_from_trace(trace)}'
-    call(f'adb2 shell "mkdir {target}')
-    with trange(length) as t:
-        for i in t:
-            img = imgs[i]
-            img_id = get_id_from_file_name(img.name)
-            t.set_description(f"id={img_id}")
-            call_res = call(f'adb2 push "{IMG_PATH}/{img.name}" "{target}/{img.name}"')
-            if '1 file pushed' in call_res:
-                size = int(re.search(r"(\d+) bytes", call_res).group(1)) / MB
-                t.set_postfix(size=f"{round(size, 2)}MB")
-            else:
-                print('error! :: ', call_res)
-                return None
-            img.history_id = trace.id
-    print(f'{length} pushed')
-    ss.commit()
+
+@click.command()
+@click.argument('amount', type=click.INT)
+@click.option('-t', '--times', type=click.INT, default=1)
+def push(amount: int, times: int) -> None:
+    def _push():
+        min_count = ss.query(func.min(Image.count)).filter(Image.star == Image.count).first()[0]
+        print(f"min count = {min_count}")
+        imgs = list(ss.query(Image).filter(Image.star == Image.count,
+                                           Image.count == min_count,
+                                           Image.history.has(finish=True)
+                                           ).limit(amount))
+        print(f"{len(imgs)} images in total")
+
+        minId = imgs[0].id
+        maxId = imgs[-1].id
+        length = len(imgs)
+        today = date.today()
+        trace = History(
+            date=today,
+            start=minId,
+            end=maxId,
+            amount=length
+        )
+        ss.add(trace)
+        ss.commit()
+
+        target = f'{root}/{get_folder_name_from_trace(trace)}'
+        call(f'adb2 shell "mkdir {target}"')
+        with trange(length) as t:
+            for i in t:
+                img = imgs[i]
+                img_id = get_id_from_file_name(img.name)
+                t.set_description(f"id={img_id}")
+                call_res = call(f'adb2 push "{IMG_PATH}/{img.name}" "{target}/{img.name}"')
+                if '1 file pushed' in call_res:
+                    size = int(re.search(r"(\d+) bytes", call_res).group(1)) / MB
+                    t.set_postfix(size=f"{round(size, 2)}MB")
+                else:
+                    print('error! :: ', call_res)
+                    return None
+                img.history_id = trace.id
+        print(f'{length} pushed')
+        ss.commit()
+
+    for _ in range(times):
+        _push()
 
 
 def history_select(_all):
     history = ss.query(History).filter(History.finish == False, History.id > 0).all()
+    choices = []
     for i, trace in enumerate(history):
-        print(f"[{i}]:id={trace.id} pushed at {str(trace.date)} from {trace.start} to {trace.end}")
+        choices.append(f'[{i}]:{get_description_from_trace(trace=trace)}')
 
     if _all:
         return history
     else:
-        index = int(input('input the index you want to update: '))
-        trace = history[index]
+        question = [
+            inquirer.List(
+                'choice',
+                message='which history do you want to update?',
+                choices=choices
+            )
+        ]
+        ans = inquirer.prompt(question)
+        index = re.match(r'\[(\d+)\]', ans['choice']).group(1)
+        trace = history[int(index)]
         return trace
 
 
@@ -128,6 +183,8 @@ def history_select(_all):
 #     })
 #     ss.delete(trace)
 
+@click.command()
+@click.option('-a', '--all', '_all', is_flag=True, default=False, show_default=True)
 def update(_all=False):
     def update_one(_trace):
         ss.add(_trace)
@@ -154,6 +211,8 @@ def update(_all=False):
     ss.commit()
 
 
+@click.command()
+@click.argument('count', type=int, default=0)
 def trans(count=0):
     path = DOWNLOAD_PATH if not count else DOWNLOAD_PATH + '/all'
     confirm = False
@@ -215,7 +274,13 @@ def trans(count=0):
     ss.commit()
 
 
-def download_yande_imgs():
+@click.command('dl')
+@click.argument('method', type=click.Choice([
+    'daily', 'all', 'id'
+]), default='daily')
+@click.option('-t', '--tag', type=str, default='')
+# @click.option('-i', '--id', '_id', type=int, default=0)
+def download_yande_imgs(method: str, tag: str = ''):
     def add_empty_item(img_id, img_url):
         check_res = check_exists(Image, id=img_id)
         if check_res:
@@ -224,11 +289,11 @@ def download_yande_imgs():
             new_img = Image(id=img_id, url=img_url, star=-1)
             ss.add(new_img)
 
-    typ = input("what kind of method you want: ")
+    typ = method
     if typ == 'daily':
         yande = YandeSpider(need_json=True, add_database_cb=add_empty_item)
     elif typ == 'all':
-        tag = input('the tag you want: ')
+        assert tag
         yande = YandeAll([tag], add_database_cb=add_empty_item)
     elif typ == 'id':
         yande = YandeId(add_database_cb=add_empty_item)
@@ -249,30 +314,41 @@ def test():
 # TODO 这个还是可以优化一下
 
 if __name__ == '__main__':
+    assert os.path.exists(IMG_PATH)
+    assert os.path.exists(DOWNLOAD_PATH)
+    assert os.path.exists(EXCEPTION_PATH)
+
     device_list = call('adb2 devices')
     if DEVICE_ID not in device_list:
         print('no devices found!')
         sys.exit(-1)
+    main_group.add_command(push)
+    main_group.add_command(update)
+    main_group.add_command(trans)
+    main_group.add_command(download_yande_imgs)
+    main_group.add_command(status)
 
-    while True:
-        cmd = input('please input your command\n>>>').split()
-        cmd_func = cmd[0]
-        if cmd_func == 'push':
-            push(int(cmd[1]))
-        elif cmd_func == 'update':
-            if cmd[-1] == 'all':
-                update(_all=True)
-            else:
-                update()
-        elif cmd_func == 'trans':
-            if len(cmd) == 2:
-                trans(int(cmd[1]))
-                continue
-            trans()
-        elif cmd_func == 'dl':
-            download_yande_imgs()
-        elif cmd_func == 'quit':
-            break
-        else:
-            input("test mod")
-            test()
+    main_group()
+
+    # while True:
+    #     cmd = input('please input your command\n>>>').split()
+    #     cmd_func = cmd[0]
+    #     if cmd_func == 'push':
+    #         push(int(cmd[1]))
+    #     elif cmd_func == 'update':
+    #         if cmd[-1] == 'all':
+    #             update(_all=True)
+    #         else:
+    #             update()
+    #     elif cmd_func == 'trans':
+    #         if len(cmd) == 2:
+    #             trans(int(cmd[1]))
+    #             continue
+    #         trans()
+    #     elif cmd_func == 'dl':
+    #         download_yande_imgs()
+    #     elif cmd_func == 'quit':
+    #         break
+    #     else:
+    #         input("test mod")
+    #         test()

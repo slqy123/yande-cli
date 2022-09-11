@@ -5,3 +5,4 @@ DEVICE_ID = 'QKXUT20611001197'
 
 # constants
 MB = 1024*1024
+CLEAR = "\033[1K\r"
