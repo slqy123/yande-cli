@@ -1,6 +1,5 @@
 # -*- coding: UTF-8 -*-
-import os;
-
+import os
 os.chdir(os.path.split(__file__)[0])
 import re
 import shutil
@@ -30,7 +29,7 @@ def call(command):
 
 def get_description_from_trace(trace):
     trace_path = get_folder_name_from_trace(trace)
-    img_num = int(call(f'adb2 shell "cd {root}/{trace_path} && ls -l |grep ^-|wc -l"'))
+    img_num = int(call(f'adb2 -s {DEVICE_ID} shell "cd {root}/{trace_path} && ls -l |grep ^-|wc -l"'))
     return f"id={trace.id} pushed at {str(trace.date)} "\
            f"from {trace.start} to {trace.end}({img_num}/{trace.amount})"
 
@@ -69,17 +68,22 @@ def update_star(file_name, trace_id):
     rm: str = input()
     if rm.strip().lower() == 'y' or rm == '':
         rm_success_flag = True
+        rm_failed_imgs = []
+
         for path in imgs2remove:
             if os.path.exists(path):
                 os.remove(path)
             else:
                 print(f'file {path} not exists')
                 rm_success_flag = 1 if rm_success_flag is True else rm_success_flag + 1
+                rm_failed_imgs.append(path)
         
         if rm_success_flag is True:
             print('files remove successfully')
         else:
-            print(f'{rm_success_flag} files failed to delete')
+            with open('file_not_exists.txt', 'w') as f:
+                f.write('\n'.join(rm_failed_imgs))
+            print(f'{rm_success_flag} files failed to delete, see ./file_not_exists.txt for details')
         
         ss.commit()
 
@@ -111,13 +115,13 @@ def status():
 @click.option('-t', '--times', type=click.INT, default=1)
 def push(amount: int, times: int) -> None:
     def _push():
-        min_count = ss.query(func.min(Image.count)).filter(Image.star == Image.count).first()[0]
+        min_count = ss.query(func.min(Image.count)).filter(
+            Image.star == Image.count, Image.history.has(finish=True)).first()[0]
         print(f"min count = {min_count}")
         imgs = list(ss.query(Image).filter(Image.star == Image.count,
                                            Image.count == min_count,
                                            Image.history.has(finish=True)
                                            ).limit(amount))
-        print(f"{len(imgs)} images in total")
 
         minId = imgs[0].id
         maxId = imgs[-1].id
@@ -132,14 +136,16 @@ def push(amount: int, times: int) -> None:
         ss.add(trace)
         ss.commit()
 
+        print(f"{len(imgs)} images in total from {minId} to {maxId}")
+
         target = f'{root}/{get_folder_name_from_trace(trace)}'
-        call(f'adb2 shell "mkdir {target}"')
+        call(f'adb2 -s {DEVICE_ID} shell "mkdir {target}"')
         with trange(length) as t:
             for i in t:
                 img = imgs[i]
                 img_id = get_id_from_file_name(img.name)
                 t.set_description(f"id={img_id}")
-                call_res = call(f'adb2 push "{IMG_PATH}/{img.name}" "{target}/{img.name}"')
+                call_res = call(f'adb2 -s {DEVICE_ID} push "{IMG_PATH}/{img.name}" "{target}/{img.name}"')
                 if '1 file pushed' in call_res:
                     size = int(re.search(r"(\d+) bytes", call_res).group(1)) / MB
                     t.set_postfix(size=f"{round(size, 2)}MB")
@@ -191,13 +197,13 @@ def update(_all=False):
         _trace.finish = True
         dir_name = get_folder_name_from_trace(_trace)
         target = f"{root}/{dir_name}"
-        call(f'adb2 shell "cd {target} && ls > out.txt && exit"')
-        call(f'adb2 pull {target}/out.txt ./')
-        call(f'adb2 shell "rm {target}/out.txt"')
+        call(f'adb2 -s {DEVICE_ID} shell "cd {target} && ls > out.txt && exit"')
+        call(f'adb2 -s {DEVICE_ID} pull {target}/out.txt ./')
+        call(f'adb2 -s {DEVICE_ID} shell "rm {target}/out.txt"')
 
         update_star('out.txt', _trace.id)
 
-        call(f'adb2 shell rm -rf {target}')
+        call(f'adb2 -s {DEVICE_ID} shell rm -rf {target}')
 
     if _all:
         input('are you sure?')
