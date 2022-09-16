@@ -11,3 +11,5 @@ test-bak2.db
 test.db
 test.ipynb
 test.py
+download_log/
+download_cache.txt

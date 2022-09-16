@@ -18,7 +18,7 @@ from utils import *
 
 import time
 
-from yandeTime import YandeSpider, YandeId, YandeAll
+from yandeTime import YandeDaily, YandeId, YandeAll
 
 root = "sdcard/ADM/.comic"
 
@@ -287,22 +287,29 @@ def trans(count=0):
 @click.option('-t', '--tag', type=str, default='')
 # @click.option('-i', '--id', '_id', type=int, default=0)
 def download_yande_imgs(method: str, tag: str = ''):
-    def add_empty_item(img_id, img_url):
+    def add_item(img_id, img_url) -> bool:
+        """
+        :param img_id:
+        :param img_url:
+        :return: True if img exists else False
+        """
         check_res = check_exists(Image, id=img_id)
         if check_res:
             check_res.url = img_url
+            return True
         else:
             new_img = Image(id=img_id, url=img_url, star=-1)
             ss.add(new_img)
+            return False
 
     typ = method
     if typ == 'daily':
-        yande = YandeSpider(need_json=True, add_database_cb=add_empty_item)
+        yande = YandeDaily(add_database_cb=add_item)
     elif typ == 'all':
         assert tag
-        yande = YandeAll([tag], add_database_cb=add_empty_item)
+        yande = YandeAll(add_database_cb=add_item, tags=[tag])
     elif typ == 'id':
-        yande = YandeId(add_database_cb=add_empty_item)
+        yande = YandeId(add_database_cb=add_item)
     else:
         return
     yande.run()
