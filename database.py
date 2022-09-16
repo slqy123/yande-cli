@@ -12,12 +12,16 @@ class Image(Base):
     __tablename__ = 'image'
     id = Column(Integer, primary_key=True)
     name = Column(Text, unique=True)
-    tags = relationship('Tag', secondary='images2tags', backref='Images')
+    rtags = relationship('Tag', secondary='images2tags', backref='Images')
     star = Column(Integer, default=0)
     count = Column(Integer, default=0)
     url = Column(Text, default='')
     history_id = Column(Integer, ForeignKey('history.id'), default=0)
     history = relationship('History', backref='images')
+    tags = Column(Text, default='')
+    last_update_date = Column(Date)
+    author = Column(Text)
+    creator_id = Column(Integer)
 
 
 class Tag(Base):

@@ -11,17 +11,23 @@ from subprocess import call
 from pyperclip import copy
 import shutil
 import re
+from database import ss, Image
+from utils import check_exists
+import os
+from settings import IMG_PATH
 
 TAGS = ['bondage', 'loli', 'pee', 'vibrator',
         'anal', 'dildo', 'anal_beads', 'masturbation', 'yuri',
         'cunnilingus', 'fingering', 'pussy_juice', 'fellatio', 'handjob']
+
+INFO_KEY = ['id', 'file_ext', 'tags', 'file_url', 'author', 'creator_id']
 
 
 # TODO 不依靠json文件，可以选择使用pickle来存储
 class BaseYandeSpider:
     METHOD = 'BASE'
 
-    def __init__(self, add_database_cb=None, tags=None):
+    def __init__(self, tags=None):
         '''mode 可选择 refresh, 定时更新  以及all, 下载全部'''
         self.headers = {"User-Agent": "Mozilla/5.0 (Linux; Android 6.0; Nexus 5 Build/MRA58N) AppleWebKit/537.36 "
                                       "(KHTML, like Gecko) Chrome/91.0.4472.114 Mobile Safari/537.36"}
@@ -33,11 +39,9 @@ class BaseYandeSpider:
         }
         self.post_url = self.original_url + "/post.json"
         self.output_dir = "./_all/"
-        assert add_database_cb
-        self.add_database_cb = add_database_cb
         self.failed_urls = []
         self.img_result = []
-
+        self.urls = None
 
         if not tags:
             self.tags = TAGS
@@ -51,7 +55,7 @@ class BaseYandeSpider:
         self.log_fp = open(f'download_log/{self.METHOD}-{self.today}-{self.timestamp}.txt', 'w', encoding='utf8')
 
     def refresh(self):
-        pass
+        return []
 
     def request_infos(self, urls, failed=False):
         if failed:
@@ -74,10 +78,7 @@ class BaseYandeSpider:
                 self.failed_urls.append(res.request.url)
                 continue
             for item in resJson:
-                img_infos.append({"id": item['id'],
-                                  'file_ext': item['file_ext'],
-                                  'tags': item['tags'],
-                                  'file_url': item['file_url']})
+                img_infos.append({key: item[key] for key in INFO_KEY})
 
         if self.failed_urls:
             return img_infos + self.request_infos(self.failed_urls, failed=True)
@@ -85,29 +86,62 @@ class BaseYandeSpider:
             return img_infos
 
     def run(self):
-        urls = set(self.refresh())
-        self.img_result = self.request_infos(urls)
+        self.urls = set(self.refresh())
+        self.img_result = self.request_infos(self.urls)
+        self.img_result = {item['id']: item for item in self.img_result}.values()
+        # TODO 觉得没啥问题就把下面这个这删了吧
+        assert len(set(info['file_url'] for info in self.img_result)) == len(self.img_result)
 
         img_exists_list = []
         img_not_exists_list = []
 
-        for img_id, img_url in set((item['id'], item['file_url']) for item in self.img_result):
-            exists = self.add_database_cb(img_id=img_id, img_url=img_url)
+        for info in self.img_result:
+            exists = self.process_update_info(info)
             if not exists:
-                img_not_exists_list.append(img_url)
+                img_not_exists_list.append(info['file_url'])
             else:
-                img_exists_list.append(img_url)
+                img_exists_list.append(info['file_url'])
 
         img_not_exists_str = "\n".join(img_not_exists_list)
         self.log_fp.write(img_not_exists_str)
         self.log_fp.write('\n--- images below already exists ---\n')
         self.log_fp.write('\n'.join(img_exists_list))
-        urls = set([info['file_url'] for info in self.img_result])
-        print("total: %d, exists: %d, not exists: %d" % (len(urls), len(img_exists_list), len(img_not_exists_list)))
-        copy(img_not_exists_str)
-        call(self.idm)
+
+        print("total: %d, exists: %d, not exists: %d" %
+              (len(self.img_result), len(img_exists_list), len(img_not_exists_list)))
 
         self.log_fp.close()
+
+    @staticmethod
+    def process_update_info(info):
+        assert info['id']
+        check_res = check_exists(Image, id=info['id'])
+        rt = bool(check_res)
+        if rt:
+            img = check_res
+        else:
+            img = Image(id=info['id'], star=-2)
+            ss.add(img)
+
+        img.last_update_date = datetime.date.today()
+
+        diff = False
+        for key in ('tags', 'author', 'creator_id', 'file_url'):
+            if info[key] != getattr(img, key):
+                setattr(img, key, info[key])
+                diff = True
+
+        if diff:
+            new_name = f'yande.re {img.id} {img.tags}.{info["file_ext"]}'
+            old_path = os.path.join(IMG_PATH, img.name)
+            new_path = os.path.join(IMG_PATH, new_name)
+            assert os.path.exists(old_path)
+            if old_path != new_path:
+                os.rename(old_path, new_path)
+                img.name = new_name
+
+        ss.commit()
+        return rt
 
     def handle(self, req, info):
         print(f"{req.url} 请求失败")
@@ -121,8 +155,8 @@ class BaseYandeSpider:
 class YandeDaily(BaseYandeSpider):
     METHOD = 'DAILY'
 
-    def __init__(self, tags=None, add_database_cb=None):
-        super(YandeDaily, self).__init__(tags=tags, add_database_cb=add_database_cb)
+    def __init__(self, *args, **kwargs):
+        super(YandeDaily, self).__init__(*args, **kwargs)
 
         with open('infos.json') as f:
             self.settings = json.loads(f.read())
@@ -153,6 +187,7 @@ class YandeDaily(BaseYandeSpider):
 
 class YandeAll(BaseYandeSpider):
     METHOD = 'ALL'
+
     def refresh(self):
         tag2dl = self.tags[0]
         print("%s?limit=1000&tags=%s&page=%s" % (self.post_url, tag2dl, 1))
@@ -165,15 +200,17 @@ class YandeAll(BaseYandeSpider):
         super(YandeAll, self).run()
 
 
-
 # TODO: 如果请求太多的话还是分批比较好
 class YandeId(BaseYandeSpider):
+    METHOD = 'ID'
+
+    def __init__(self, ids, *args, **kwargs):
+        super(YandeId, self).__init__(*args, **kwargs)
+        self.ids = ids
+
     def refresh(self):
-        with open('del.txt') as f:
-            contents = f.read().split('\n')
-            _ids = [int(c) for c in contents]
-            for _id in _ids:
-                yield "%s?limit=200&tags=id:%d" % (self.post_url, _id)
+        for id_ in self.ids:
+            yield "%s?tags=id:%d" % (self.post_url, id_)
 
 
 if __name__ == '__main__':
