@@ -62,8 +62,11 @@ def update_star(file_name, trace_id):
                 imgs2remove.append(f'{IMG_PATH}/{img.name}')
                 print(CLEAR + 'delete', img.name, end="", flush=True)
             else:
-                print(CLEAR + 'filter' + img.name, end='', flush=True)
-    print(f'\n{count} images to be removed in total')
+                print(CLEAR + 'filter', img.name, end='', flush=True)
+    print(f'\n{len(imgs2remove)} images removed, {count-len(imgs2remove)} filtered')
+    if not imgs2remove:
+        ss.commit()
+        return 
     print("start removing files?(Y/n)", end="", flush=True)
     rm: str = input()
     if rm.strip().lower() == 'y' or rm == '':
@@ -220,12 +223,12 @@ def update(_all=False):
 @click.command()
 @click.argument('count', type=int, default=0)
 def trans(count=0):
-    path = DOWNLOAD_PATH if not count else DOWNLOAD_PATH + '/all'
+    # path = DOWNLOAD_PATH if not count else DOWNLOAD_PATH + '/all'
+    path = DOWNLOAD_PATH
     confirm = False
     imgs = os.listdir(path)
     count = min(len(imgs), count)  # 防止图片数少于count时越界
-    if 'all' in imgs:
-        imgs.remove('all')
+
     imgs = imgs[:count] if count else imgs
     img_count = len(imgs)
     print(img_count)
