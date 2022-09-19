@@ -1,13 +1,13 @@
 # -*- coding: UTF-8 -*-
 import os
+import ssl
 
 os.chdir(os.path.split(__file__)[0])
 import re
 import shutil
 import sys
 
-from sqlalchemy.sql import func
-from sqlalchemy import or_, not_
+from sqlalchemy import func
 from database import *
 from settings import *
 from datetime import date
@@ -17,6 +17,7 @@ import inquirer
 from subprocess import run
 # from subprocess import call 重新定义了一个call函数，会返回输出的内容
 from utils import *
+from random import sample
 
 import time
 
@@ -69,6 +70,7 @@ def status():
 @click.argument('amount', type=click.INT)
 @click.option('-t', '--times', type=click.INT, default=1)
 def push(amount: int, times: int) -> None:
+    # TODO 增加min_count在文件名里
     def _push():
         min_count = ss.query(func.min(Image.count)).filter(
             Image.star == Image.count, Image.history.has(finish=True)).first()[0]
@@ -127,7 +129,7 @@ def history_select(_all):
         question = [
             inquirer.List(
                 'choice',
-                message='which history do you want to update?',
+                message='which history do you want to pull?',
                 choices=choices
             )
         ]
@@ -135,6 +137,7 @@ def history_select(_all):
         index = re.match(r'\[(\d+)\]', ans['choice']).group(1)
         trace = history[int(index)]
         return trace
+
 
 @click.command()
 @click.option('-a', '--all', '_all', is_flag=True, default=False, show_default=True)
@@ -189,6 +192,7 @@ def pull(_all=False):
                 print(f'{rm_success_flag} files failed to delete, see ./file_not_exists.txt for details')
 
             ss.commit()
+
     def pull_one(_trace):
         ss.add(_trace)
         _trace.finish = True
@@ -216,7 +220,7 @@ def pull(_all=False):
 
 @click.command()
 @click.argument('count', type=int, default=0)
-def trans(count=0):
+def trans(count: int = 0):
     # path = DOWNLOAD_PATH if not count else DOWNLOAD_PATH + '/all'
     path = DOWNLOAD_PATH
     confirm = False
@@ -277,6 +281,43 @@ def trans(count=0):
     ss.commit()
 
 
+@click.command()
+@click.argument('amount', type=int, default=0)
+def add(amount: int = 0):
+    all_download_imgs = os.listdir(DOWNLOAD_PATH)
+    if amount > 0:
+        all_download_imgs = all_download_imgs[: amount]
+    for img in all_download_imgs:
+        checked_img = check_exists(Image, name=img)
+
+        # TODO 验证用的assert
+        if not checked_img:
+            print(f'delete img not found: {img}')
+            os.remove(os.path.join(DOWNLOAD_PATH, img))
+            return
+
+        assert checked_img.star == -3 and checked_img.count == 0
+
+        src_path = os.path.join(DOWNLOAD_PATH, img)
+        dst_path = os.path.join(IMG_PATH, img)
+        shutil.move(src_path, dst_path)
+        print(f'move {img}')
+        checked_img.star = 0
+
+    ss.commit()
+
+
+@click.command()
+def clear():
+    input('use it when your idm download queue is empty!')
+    for img in ss.query(Image).filter(Image.star == -3):
+        if not os.path.exists(os.path.join(DOWNLOAD_PATH, img.name)):
+            print(f'{img.name} not found')
+            img.star = -2
+            YandeId([img.id]).run()
+    ss.commit()
+
+
 @click.command('dl')
 @click.argument('method', type=click.Choice([
     'daily', 'all', 'id', 'start'
@@ -289,17 +330,17 @@ def download_yande_imgs(method: str, tag: str = '', amount: int = 0):
         nonlocal amount
         if amount == 0:
             total_amount = ss.query(Image).filter(Image.star == -2).count()
-            user_cmd = input(f'Are you sure to download all images[{total_amount} in total](y/N)?')
-            if user_cmd.strip().lower() == 'n' or user_cmd == '':
+            user_cmd = input(f'Are you sure to download all images[{total_amount} in total](Y/n)?')
+            if user_cmd.strip().lower() == 'n':
                 return
             amount = total_amount
 
         imgs = ss.query(Image).filter(Image.star == -2).limit(amount)
         for img in imgs:
             assert img.name
-            assert img.url
+            assert img.file_url
 
-            call(f'IDMan /d "{img.url}" /p "{DOWNLOAD_PATH}" /f "{img.name}" /a')
+            call(f'IDMan /d "{img.file_url}" /p "{DOWNLOAD_PATH}" /f "{img.name}" /a')
             img.star = -3
 
         call('IDMan /s')
@@ -312,7 +353,8 @@ def download_yande_imgs(method: str, tag: str = '', amount: int = 0):
         assert tag
         yande = YandeAll(tags=[tag])
     elif typ == 'id':
-        yande = YandeId()
+        # TODO
+        yande = YandeId([])
     elif typ == 'start':
         start_idm_download()
         return
@@ -321,15 +363,47 @@ def download_yande_imgs(method: str, tag: str = '', amount: int = 0):
     yande.run()
     ss.commit()
 
-@click.command()
-@click.argument('amount', type=int)
-def update(amount):
-    if amount == 0:
-        raise "Do not update all images at once!"
-    imgs2update = ss.query(Image).filter(Image.star >= 0).order_by(Image.last_update_date.asc()).limit(amount)
 
-    ids = [img.id for img in imgs2update]
-    yande = YandeId(ids=ids)
+@click.command()
+@click.argument('amount', type=int, default=0)
+@click.option('-m', '--mode', type=click.Choice(['id', 'tag', 'time']), default='time')
+@click.option('-t', '--tag', type=str, default='')
+def update(amount: int = 0, mode: str = 'time', tag: str = ''):
+    exists_img_query = ss.query(Image).filter(Image.star >= 0)
+    last_date = exists_img_query.order_by(Image.last_update_date.asc()).first().last_update_date
+    img_query = exists_img_query.filter(Image.last_update_date == last_date)
+
+    if mode == 'id':
+        if amount < 1:
+            print("please input amount > 0")
+            return
+        ids = [img.id for img in img_query.limit(amount)]
+        yande = YandeId(ids=ids)
+        yande.run()
+    elif mode == 'tag':
+        def get_rand_tag() -> str:
+            rand_img = img_query.filter(Image.tags != None).order_by(func.random()).first()
+            if not rand_img:
+                print('no proper tag found!')
+                rand_img = ss.query(Image).filter(Image.tags != None).order_by(func.random()).first()
+            tags = rand_img.tags.split(' ')
+            print(tags, rand_img.id)
+            rand_tag = sample(set(tags) & set(TAGS), 1)[0]
+            print(f'choose img id={rand_img.id}, tag={rand_tag}')
+            return rand_tag
+
+        tag: str = tag if tag else get_rand_tag()
+        if tag not in TAGS:
+            user_input = input('this tag is not in the default tags, still want to update?(y/N)')
+            if user_input.strip().lower() == 'n' or user_input.strip() == '':
+                return
+
+        yande = YandeAll(tags=[tag])
+        yande.run()
+    elif mode == 'time':
+        yande = YandeDaily()
+        yande.run()
+
 
 def test():
     all_img = ss.query(Image).all()
@@ -337,7 +411,6 @@ def test():
         res = os.path.isfile(os.path.join(IMG_PATH, img.name))
         if (not res) and img.star != -1:
             print(img.id)
-
 
 
 if __name__ == '__main__':
@@ -352,8 +425,11 @@ if __name__ == '__main__':
     main_group.add_command(push)
     main_group.add_command(pull)
     main_group.add_command(trans)
+    main_group.add_command(add)
     main_group.add_command(download_yande_imgs)
     main_group.add_command(status)
+    main_group.add_command(update)
+    main_group.add_command(clear)
 
     main_group()
 

@@ -1,7 +1,10 @@
-IMG_PATH = "F:/movies/images"
-DOWNLOAD_PATH = "F:/movies/download_images"
-EXCEPTION_PATH = 'F:/movies/Exceptions'
+IMG_PATH = "G:/yande/images"
+DOWNLOAD_PATH = "G:/yande/download_images"
+EXCEPTION_PATH = 'G:/yande/Exceptions'
 DEVICE_ID = 'QKXUT20611001197'
+TAGS = ['bondage', 'loli', 'pee', 'vibrator',
+        'anal', 'dildo', 'anal_beads', 'masturbation', 'yuri',
+        'cunnilingus', 'fingering', 'pussy_juice', 'fellatio', 'handjob', 'nopan']
 
 # constants
 MB = 1024*1024
