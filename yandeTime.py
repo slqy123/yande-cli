@@ -3,17 +3,15 @@ import os
 import sys
 
 import grequests
-import requests
-from lxml import html
 import datetime
 import time
 from subprocess import call
+
+import tqdm
 from pyperclip import copy
-import shutil
 import re
 from database import ss, Image
 from utils import check_exists
-import os
 from settings import IMG_PATH, TAGS, CLEAR
 
 INFO_KEY = ['id', 'file_ext', 'tags', 'file_url', 'author', 'creator_id']
@@ -25,6 +23,7 @@ class BaseYandeSpider:
 
     def __init__(self, tags=None):
         '''mode 可选择 refresh, 定时更新  以及all, 下载全部'''
+
         self.headers = {"User-Agent": "Mozilla/5.0 (Linux; Android 6.0; Nexus 5 Build/MRA58N) AppleWebKit/537.36 "
                                       "(KHTML, like Gecko) Chrome/91.0.4472.114 Mobile Safari/537.36"}
         # self.original_url = "https://oreno.imouto.us"
@@ -43,6 +42,11 @@ class BaseYandeSpider:
         self.created_img_count = 0
         self.updated_img_count = 0
         self.renamed_img_count = 0
+        self.pushed_img_count = 0
+        self.deleted_img_count = 0
+        self.download_img_count = 0
+        self.reset_img_count = 0
+        self.request_interval = 3
 
         if not tags:
             self.tags = TAGS
@@ -61,8 +65,8 @@ class BaseYandeSpider:
     def request_infos(self, urls, failed=False):
         if failed:
             print("waiting to download failed urls")
-            for i in range(30):
-                print(f"{CLEAR}{30 - i}", end='')
+            for i in range(self.request_interval):
+                print(f"{CLEAR}{self.request_interval - i}", end='')
                 time.sleep(1)
             print('')
         img_infos = []
@@ -79,8 +83,20 @@ class BaseYandeSpider:
                 print(f"请求{res.request.url}失败")
                 self.failed_urls.append(res.request.url)
                 continue
+            if len(resJson) == 0 and self.METHOD == 'ID' and isinstance(resJson, list):
+                id_ = int(res.request.url.split('id:')[1])
+                img_infos.append({
+                    'id': id_,
+                    'status': 'deleted',
+                    'flag_detail': {'reason': 'disappear'}
+                })
+                continue
             for item in resJson:
-                img_infos.append({key: item[key] for key in INFO_KEY})
+                img_infos.append({key: item.get(key, None) for key in INFO_KEY})
+                if item['status'] == 'deleted':
+                    img_infos[-1]['status'] = 'deleted'
+                    img_infos[-1]['flag_detail'] = {'reason': item["flag_detail"]["reason"]}
+                    print(f'deleted image id:{item["id"]} for reason: {item["flag_detail"]["reason"]}')
 
         if self.failed_urls:
             return img_infos + self.request_infos(self.failed_urls, failed=True)
@@ -93,17 +109,28 @@ class BaseYandeSpider:
         if not self.img_result:
             return False  # no image to download
         self.img_result = {item['id']: item for item in self.img_result}.values()
-        # TODO 觉得没啥问题就把下面这个这删了吧
-        assert len(set(info['file_url'] for info in self.img_result)) == len(self.img_result)
         self.total_count += len(self.img_result)
 
-        for info in self.img_result:
-            self.process_update_info(info)
+        with tqdm.trange(len(self.img_result)) as progress:
+            for i, info in zip(progress, self.img_result):
+                progress.set_description(f"id={info['id']}")
+                self.process_update_info(info)
+        ss.commit()
 
-        print("total: %d, create: %d, update: %d include %d renamed images" %
-              (self.total_count, self.created_img_count, self.updated_img_count, self.renamed_img_count))
+        print(
+            "total: %d, create: %d, pushed: %d, deleted: %d, downloading: \
+            %d, update: %d include %d renamed images and %d to reset" %
+            (self.total_count, self.created_img_count, self.pushed_img_count, self.deleted_img_count,
+             self.download_img_count, self.updated_img_count, self.renamed_img_count, self.reset_img_count))
         return True
+
     def process_update_info(self, info):
+        def update_one(image):
+            for key in ('tags', 'author', 'creator_id', 'file_url'):
+                if info.get(key, None) != getattr(image, key):
+                    setattr(image, key, info.get(key, None))
+            image.last_update_date = datetime.date.today()
+
         assert info['id']
         check_res = check_exists(Image, id=info['id'])
         rt = bool(check_res)
@@ -113,52 +140,54 @@ class BaseYandeSpider:
             img = Image(id=info['id'], star=-2)
             ss.add(img)
 
-        img.last_update_date = datetime.date.today()
+        if info.get('status') == 'deleted':
+            img.star = -1
+            self.log_fp.write(f'deleted image id:{img.id}\n')
+            self.deleted_img_count += 1
+            return  # 此后的图片，info中的信息都全了，就可以获得新名字了
 
-        diff = False
-        for key in ('tags', 'author', 'creator_id', 'file_url'):
-            if info[key] != getattr(img, key):
-                setattr(img, key, info[key])
-                diff = True
-
-        new_name = f'{img.id} {img.author}.{info["file_ext"]}'
+        new_name = f'{info["id"]} {info["author"]}.{info["file_ext"]}'
         new_name = new_name.translate(str.maketrans(r'/\:*?"<>|', "_________"))
-        if img.name != new_name:
-            diff = True
 
         if not rt:
+            update_one(img)
             img.name = new_name
             self.log_fp.write(f'create "{new_name}"\n')
             self.created_img_count += 1
-            ss.commit()
+            return  # 此后都是数据库中有结果的图片了
+
+        if not img.history.finish:  # 图片已经被push了，不要干任何多余的事
+            self.log_fp.write(f'image {img.id} already pushed')
+            self.pushed_img_count += 1
             return
 
-        if diff:
-            assert img.name
-            self.log_fp.write(f'update :{img.name}"\n')
-            self.updated_img_count += 1
+        if img.star == -3:
+            self.log_fp.write(f'image {img.id} is in download queue')
+            self.download_img_count += 1
+            return
 
-            if img.name != new_name:
-                old_path = os.path.join(IMG_PATH, img.name)
-                new_path = os.path.join(IMG_PATH, new_name)
-                img.name = new_name
+        self.log_fp.write(f'update :{img.name}"\n')
+        self.updated_img_count += 1
+        update_one(img)
 
-                if not os.path.exists(old_path):
-                    if img.star >= 0:
-                        msg = f'file not found "{img.name}"\n'
-                        print(msg, end='')
-                        self.log_fp.write(msg)
-                        img.star = -2
-                        ss.commit()
-                    return
+        old_path = os.path.join(IMG_PATH, img.name)
+        new_path = os.path.join(IMG_PATH, new_name)
+        img.name = new_name
+        if not os.path.exists(old_path):
+            if img.star >= 0:
+                msg = f'file not found "{old_path} reset this image"\n'
+                print(msg, end='')
+                self.reset_img_count += 1
+                self.log_fp.write(msg)
+                img.star = -2
+                img.count = 0
+            return
 
-                if old_path != new_path:
-                    self.log_fp.write(f'rename to "{new_name}"\n')
-                    self.renamed_img_count += 1
-                    os.rename(old_path, new_path)
-                    img.name = new_name
-
-        ss.commit()
+        if img.name != new_name:  # 这意味着文件要重命名
+            self.log_fp.write(f'rename to "{new_name}"\n')
+            self.renamed_img_count += 1
+            os.rename(old_path, new_path)
+            return
 
     def handle(self, req, info):
         print(f"{req.url} 请求失败")
@@ -211,7 +240,7 @@ class YandeAll(BaseYandeSpider):
     def __init__(self, *args, **kwargs):
         super(YandeAll, self).__init__(*args, **kwargs)
         self.page = 1
-        self.batch_size = 3
+        self.batch_size = 1
 
     def refresh(self):
         tag2dl = self.tags[0]
@@ -224,7 +253,7 @@ class YandeAll(BaseYandeSpider):
 
     def run(self):
         while super(YandeAll, self).run():
-            print('-'*7)
+            print('-' * 7)
 
 
 # TODO: 如果请求太多的话还是分批比较好

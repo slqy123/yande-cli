@@ -45,3 +45,4 @@ class History(Base):
     end = Column(Integer)
     amount = Column(Integer)
     finish = Column(Boolean, default=False)
+    img_star = Column(Integer)

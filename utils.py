@@ -69,4 +69,4 @@ def del_exists_link(path: str):
 
 
 def get_folder_name_from_trace(trace):
-    return f'{trace.id}-{trace.amount}-{trace.start}-{trace.end}'
+    return f'{trace.id}-{trace.img_star}-{trace.amount}-{trace.start}-{trace.end}'
