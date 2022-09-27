@@ -5,10 +5,8 @@ import sys
 import grequests
 import datetime
 import time
-from subprocess import call
 
 import tqdm
-from pyperclip import copy
 import re
 from database import ss, Image
 from utils import check_exists

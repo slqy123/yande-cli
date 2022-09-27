@@ -45,7 +45,7 @@ def main_group():
     pass
 
 
-@click.command()
+@click.command(help='Show the current information of your images')
 def status():
     # TODO 显示当前连接情况settings里的
     total_num = ss.query(Image).count()
@@ -68,9 +68,9 @@ def status():
     print(f'last download date is {last_download_date} which is {day_pass.days} days ago')
 
 
-@click.command()
-@click.argument('amount', type=click.INT)
-@click.option('-t', '--times', type=click.INT, default=1)
+@click.command(help='Push [AMOUNT] images to your mobile device [--times] times')
+@click.argument('amount', type=click.INT, default=100)
+@click.option('-t', '--times', type=click.INT, default=1, show_default=True, help='How many times you want to push')
 def push(amount: int, times: int) -> None:
     assert DEVICE_AVAILABLE and IMG_PATH_EXISTS
 
@@ -142,8 +142,8 @@ def history_select(_all):
         return trace
 
 
-@click.command()
-@click.option('-a', '--all', '_all', is_flag=True, default=False, show_default=True)
+@click.command(help='pull a history from your mobile device and update the information')
+@click.option('-a', '--all', '_all', is_flag=True, default=False, show_default=True, help='If this flag is added, pull all histories')
 def pull(_all=False):
     assert DEVICE_AVAILABLE and IMG_PATH_EXISTS
 
@@ -285,7 +285,7 @@ def trans(count: int = 0):
     ss.commit()
 
 
-@click.command()
+@click.command(help='Move download images from the download folder to image folder. if amount not given, default to move all images')
 @click.argument('amount', type=int, default=0)
 def add(amount: int = 0):
     assert DOWNLOAD_PATH_EXISTS and IMG_PATH_EXISTS
@@ -316,7 +316,7 @@ def add(amount: int = 0):
     ss.commit()
 
 
-@click.command()
+@click.command(help='clear the images that are still in downloading')
 def clear():
     assert IMG_PATH_EXISTS
     for img in ss.query(Image).filter(Image.status == STATUS.DOWNLOADING):
@@ -329,7 +329,7 @@ def clear():
     ss.commit()
 
 
-@click.command('dl')
+@click.command('dl', help='Add [AMOUNT] images to IDM\'s download query')
 @click.argument('amount', type=int, default=0)
 def download_yande_imgs(amount: int = 0):
     assert DOWNLOAD_PATH
@@ -360,9 +360,21 @@ def download_yande_imgs(amount: int = 0):
 
 @click.command()
 @click.argument('amount', type=int, default=0)
-@click.option('-m', '--mode', type=click.Choice(['id', 'tag', 'time']), default='time')
-@click.option('-t', '--tag', type=str, default='')
+@click.option('-m', '--mode', type=click.Choice(['id', 'tag', 'time']), default='time', show_default=True, help='Update mode')
+@click.option('-t', '--tag', type=str, default='', help='Tags to update[optional]')
 def update(amount: int = 0, mode: str = 'time', tag: str = ''):
+    """
+    Update to fetch the latest [AMOUNT] image's information
+
+    there are three modes your can choose:
+
+        id: update by the last update date of an image
+
+        tag: update by the given tag, make sure to add --tag option if you use this mode
+
+        time: update all images of default tags from last update time to now
+    """
+
     assert IMG_PATH_EXISTS
 
     exists_img_query = ss.query(Image).filter(Image.status == STATUS.EXISTS)
