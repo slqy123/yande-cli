@@ -14,7 +14,7 @@ def get_id_from_file_name(file_name: str) -> int:
     return int(file_name.split(' ')[1])
 
 
-def check_exists(obj: Base, **kwargs):
+def check_exists(obj, **kwargs):
     # print(kwargs)
     res = ss.query(obj).filter_by(**kwargs).all()
     if len(res) == 0:

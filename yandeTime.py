@@ -12,7 +12,7 @@ from pyperclip import copy
 import re
 from database import ss, Image
 from utils import check_exists
-from settings import IMG_PATH, TAGS, CLEAR
+from settings import IMG_PATH, TAGS, CLEAR, STATUS
 
 INFO_KEY = ['id', 'file_ext', 'tags', 'file_url', 'author', 'creator_id']
 
@@ -118,8 +118,8 @@ class BaseYandeSpider:
         ss.commit()
 
         print(
-            "total: %d, create: %d, pushed: %d, deleted: %d, downloading: \
-            %d, update: %d include %d renamed images and %d to reset" %
+            "total: %d, create: %d, pushed: %d, deleted: %d, downloading: "
+            "%d, update: %d include %d renamed images and %d to reset" %
             (self.total_count, self.created_img_count, self.pushed_img_count, self.deleted_img_count,
              self.download_img_count, self.updated_img_count, self.renamed_img_count, self.reset_img_count))
         return True
@@ -137,11 +137,11 @@ class BaseYandeSpider:
         if rt:
             img = check_res
         else:
-            img = Image(id=info['id'], star=-2)
+            img = Image(id=info['id'], star=0, status=STATUS.QUEUING)
             ss.add(img)
 
         if info.get('status') == 'deleted':
-            img.star = -1
+            img.status = STATUS.DELETED
             self.log_fp.write(f'deleted image id:{img.id}\n')
             self.deleted_img_count += 1
             return  # 此后的图片，info中的信息都全了，就可以获得新名字了
@@ -161,7 +161,7 @@ class BaseYandeSpider:
             self.pushed_img_count += 1
             return
 
-        if img.star == -3:
+        if img.status == STATUS.DOWNLOADING:
             self.log_fp.write(f'image {img.id} is in download queue')
             self.download_img_count += 1
             return
@@ -174,13 +174,12 @@ class BaseYandeSpider:
         new_path = os.path.join(IMG_PATH, new_name)
         img.name = new_name
         if not os.path.exists(old_path):
-            if img.star >= 0:
-                msg = f'file not found "{old_path} reset this image"\n'
+            if img.status == STATUS.EXISTS:
+                msg = f'file not found "{old_path} redownload this image"\n'
                 print(msg, end='')
                 self.reset_img_count += 1
                 self.log_fp.write(msg)
-                img.star = -2
-                img.count = 0
+                img.status = STATUS.QUEUING
             return
 
         if img.name != new_name:  # 这意味着文件要重命名

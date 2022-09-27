@@ -1,25 +1,21 @@
 # -*- coding: UTF-8 -*-
 import os
-import ssl
 
 os.chdir(os.path.split(__file__)[0])
 import re
 import shutil
-import sys
 
 from sqlalchemy import func
 from database import *
 from settings import *
 from datetime import date
-from tqdm import tqdm, trange
+from tqdm import trange
 import click
 import inquirer
 from subprocess import run
 # from subprocess import call 重新定义了一个call函数，会返回输出的内容
 from utils import get_folder_name_from_trace, process_image, check_exists, check_img_change
 from random import sample
-
-import time
 
 from yandeTime import YandeDaily, YandeId, YandeAll
 
@@ -30,6 +26,7 @@ def call(command):
     return result.stdout
 
 
+# 全局的状态信息
 IMG_PATH_EXISTS = os.path.exists(IMG_PATH)
 DOWNLOAD_PATH_EXISTS = os.path.exists(DOWNLOAD_PATH)
 EXCEPTION_PATH_EXISTS = os.path.exists(EXCEPTION_PATH)
@@ -52,7 +49,7 @@ def main_group():
 def status():
     # TODO 显示当前连接情况settings里的
     total_num = ss.query(Image).count()
-    exist_num = ss.query(Image).filter(Image.star >= 0).count()
+    exist_num = ss.query(Image).filter(Image.status == STATUS.EXISTS).count()
     traces = ss.query(History).filter(History.finish == False).all()
 
     import json
@@ -76,6 +73,7 @@ def status():
 @click.option('-t', '--times', type=click.INT, default=1)
 def push(amount: int, times: int) -> None:
     assert DEVICE_AVAILABLE and IMG_PATH_EXISTS
+
     def _push():
         min_count = ss.query(func.min(Image.count)).filter(
             Image.star == Image.count, Image.history.has(finish=True)).first()[0]
@@ -139,7 +137,7 @@ def history_select(_all):
             )
         ]
         ans = inquirer.prompt(question)
-        index = re.match(r'\[(\d+)\]', ans['choice']).group(1)
+        index = re.match(r'\[(\d+)', ans['choice']).group(1)
         trace = history[int(index)]
         return trace
 
@@ -148,6 +146,7 @@ def history_select(_all):
 @click.option('-a', '--all', '_all', is_flag=True, default=False, show_default=True)
 def pull(_all=False):
     assert DEVICE_AVAILABLE and IMG_PATH_EXISTS
+
     def process_pulled_image(file_name, trace_id):
         """
         :param file_name: 存放所有图片文件的文件名
@@ -166,13 +165,10 @@ def pull(_all=False):
             else:
                 count += 1
                 if img.star == 0:
-                    img.star = -1
+                    img.status = STATUS.DELETED
                     imgs2remove.append(f'{IMG_PATH}/{img.name}')
                     print(CLEAR + 'delete', img.name, end="", flush=True)
                 else:
-                    if img.star < 0:
-                        print(f'unexpected star = {img.star}')
-                        # reset = input('')
                     print(CLEAR + 'filter', img.name, end='', flush=True)
         print(f'\n{len(imgs2remove)} images removed, {count - len(imgs2remove)} filtered')
         if not imgs2remove:
@@ -305,26 +301,31 @@ def add(amount: int = 0):
             os.remove(os.path.join(DOWNLOAD_PATH, img))
             return
 
-        assert checked_img.star == -3 and checked_img.count == 0
+        if checked_img.count != 0:
+            print(f'error img {checked_img.id} count = {checked_img.count}')
+            checked_img.count = 0
+
+        assert checked_img.status == STATUS.DOWNLOADING and checked_img.count == 0
 
         src_path = os.path.join(DOWNLOAD_PATH, img)
         dst_path = os.path.join(IMG_PATH, img)
         shutil.move(src_path, dst_path)
         print(f'move {img}')
-        checked_img.star = 0
+        checked_img.status = STATUS.EXISTS
 
     ss.commit()
 
 
 @click.command()
 def clear():
-    assert DOWNLOAD_PATH_EXISTS
-    input('use it when your idm download queue is empty!')
-    for img in ss.query(Image).filter(Image.star == -3):
-        if not os.path.exists(os.path.join(DOWNLOAD_PATH, img.name)):
-            print(f'{img.name} not found')
-            img.star = -2
-            YandeId([img.id]).run()
+    assert IMG_PATH_EXISTS
+    for img in ss.query(Image).filter(Image.status == STATUS.DOWNLOADING):
+        if os.path.exists(os.path.join(IMG_PATH, img.name)):
+            print(f'exists {img.name}')
+            img.status = STATUS.EXISTS
+        else:
+            print(f'not found {img.name}')
+            img.status = STATUS.QUEUING
     ss.commit()
 
 
@@ -332,22 +333,23 @@ def clear():
 @click.argument('amount', type=int, default=0)
 def download_yande_imgs(amount: int = 0):
     assert DOWNLOAD_PATH
+
     def start_idm_download():
         nonlocal amount
         if amount == 0:
-            total_amount = ss.query(Image).filter(Image.star == -2).count()
+            total_amount = ss.query(Image).filter(Image.status == STATUS.QUEUING).count()
             user_cmd = input(f'Are you sure to download all images[{total_amount} in total](Y/n)?')
             if user_cmd.strip().lower() == 'n':
                 return
             amount = total_amount
 
-        imgs = ss.query(Image).filter(Image.star == -2).limit(amount)
+        imgs = ss.query(Image).filter(Image.status == STATUS.QUEUING).limit(amount)
         for img in imgs:
             assert img.name
             assert img.file_url
 
             call(f'IDMan /d "{img.file_url}" /p "{DOWNLOAD_PATH}" /f "{img.name}" /a')
-            img.star = -3
+            img.status = STATUS.DOWNLOADING
 
         call('IDMan /s')
         ss.commit()
@@ -363,7 +365,7 @@ def download_yande_imgs(amount: int = 0):
 def update(amount: int = 0, mode: str = 'time', tag: str = ''):
     assert IMG_PATH_EXISTS
 
-    exists_img_query = ss.query(Image).filter(Image.star >= 0)
+    exists_img_query = ss.query(Image).filter(Image.status == STATUS.EXISTS)
     last_date = exists_img_query.order_by(Image.last_update_date.asc()).first().last_update_date
     img_query = exists_img_query.filter(Image.last_update_date == last_date)
 

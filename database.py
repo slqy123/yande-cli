@@ -22,6 +22,7 @@ class Image(Base):
     last_update_date = Column(Date)
     author = Column(Text)
     creator_id = Column(Integer)
+    status = Column(Integer)
 
 
 class Tag(Base):
