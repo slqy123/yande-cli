@@ -34,3 +34,18 @@
 ### settings.py
 见 `settings.py` 内的注释
 
+> 如果你是第一次运行，请首先添加一些图片，
+> 运行 `yande update --mode tag --tag "your tag" `引号里放你要的tag。
+> 然后运行 `yande dl [AMOUNT]` 下载这些图片，等待IDM图片下载完成后运行 `yande add` 添加下载的图片即可
+> ，然后就可以通过 `yande push [AMOUNT]` 来导入手机了
+
+## 关于图片的打分
+数据库中用star的存放图片的分数，刚下载的图片分数为0。
+每个被push的图片，在浏览时可以选择不喜欢的图片删除，所有图片在pull时，都会count+1，然后分两种情况
+- 图片存在，star+1，此时图片的star=count
+- 图片被删除，star不变，此时图片star != count，若star为0，则将状态改为删除。
+
+也就是说，图片评分大致可分为三种
+- star=count，每次push都没被删除，push时也只会选择这样的图片push
+- star=0,count=1，第一次就被删除，说明质量很差，删除本地文件
+- star>0, count=star+1，图片被定格在了这个star，因为不会再被push了

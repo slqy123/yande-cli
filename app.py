@@ -35,9 +35,9 @@ DEVICE_AVAILABLE = True if DEVICE_ID in call('adb2 devices') else False
 
 def get_description_from_trace(trace):
     trace_path = get_folder_name_from_trace(trace)
-    img_num = int(call(f'adb2 -s {DEVICE_ID} shell "cd {ROOT}/{trace_path} && ls -l |grep ^-|wc -l"'))
+    img_num = int(call(f'adb2 -s {DEVICE_ID} shell "cd {ROOT}/{trace_path} && ls -l |grep ^-|wc -l"')) if DEVICE_AVAILABLE else None
     return f"id={trace.id},image star = {trace.img_star} pushed at {str(trace.date)} " \
-           f"from {trace.start} to {trace.end}({img_num}/{trace.amount})"
+           f"from {trace.start} to {trace.end}" + ('' if img_num is None else f"({img_num}/{trace.amount})")
 
 
 @click.group()
@@ -51,6 +51,15 @@ def status():
     total_num = ss.query(Image).count()
     exist_num = ss.query(Image).filter(Image.status == STATUS.EXISTS).count()
     traces = ss.query(History).filter(History.finish == False).all()
+    print(f"{total_num} images in total, {exist_num} exists, {total_num - exist_num} are deleted")
+
+    if not DEVICE_AVAILABLE:
+        print('Device is not available, can\'t get detailed history information')
+    choices = []
+    for i, trace in enumerate(traces):
+        choices.append(f'[{i}]:{get_description_from_trace(trace=trace)}')
+    print(f"{len(traces)} push histories are not updated, they are:")
+    print(*choices, sep='\n')
 
     import json
     from datetime import date
@@ -58,13 +67,6 @@ def status():
         settings = json.loads(f.read())
     last_download_date = date.fromisoformat(settings['last'])
     day_pass = date.today() - last_download_date
-    choices = []
-    for i, trace in enumerate(traces):
-        choices.append(f'[{i}]:{get_description_from_trace(trace=trace)}')
-
-    print(f"{total_num} images in total, {exist_num} exists, {total_num - exist_num} are deleted")
-    print(f"{len(traces)} push histories are not updated, they are:")
-    print(*choices, sep='\n')
     print(f'last download date is {last_download_date} which is {day_pass.days} days ago')
 
 
@@ -374,12 +376,12 @@ def update(amount: int = 0, mode: str = 'time', tag: str = ''):
 
         time: update all images of default tags from last update time to now
     """
-
     assert IMG_PATH_EXISTS
 
-    exists_img_query = ss.query(Image).filter(Image.status == STATUS.EXISTS)
-    last_date = exists_img_query.order_by(Image.last_update_date.asc()).first().last_update_date
-    img_query = exists_img_query.filter(Image.last_update_date == last_date)
+    if ss.query(Image).count():
+        exists_img_query = ss.query(Image).filter(Image.status == STATUS.EXISTS)
+        last_date = exists_img_query.order_by(Image.last_update_date.asc()).first().last_update_date
+        img_query = exists_img_query.filter(Image.last_update_date == last_date)
 
     if mode == 'id':
         if amount < 1:

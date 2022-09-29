@@ -10,7 +10,7 @@ import tqdm
 import re
 from database import ss, Image
 from utils import check_exists
-from settings import IMG_PATH, TAGS, CLEAR, STATUS
+from settings import IMG_PATH, TAGS, CLEAR, STATUS, YANDE_ALL_UPDATE_SIZE
 
 INFO_KEY = ['id', 'file_ext', 'tags', 'file_url', 'author', 'creator_id']
 
@@ -237,20 +237,20 @@ class YandeAll(BaseYandeSpider):
     def __init__(self, *args, **kwargs):
         super(YandeAll, self).__init__(*args, **kwargs)
         self.page = 1
-        self.batch_size = 1
+        self.tag2dl = None
+        self.batch_size = YANDE_ALL_UPDATE_SIZE
 
     def refresh(self):
-        tag2dl = self.tags[0]
-        # print("%s?limit=1000&tags=%s&page=%s" % (self.post_url, tag2dl, 1))
-        # pages = int(input('with a limit of 1000, how many pages?: '))
-
-        for i in range(self.page, self.page + self.batch_size):
-            self.page += 1
-            yield "%s?limit=1000&tags=%s&page=%s" % (self.post_url, tag2dl, str(i))
+        yield f"{self.post_url}?limit={self.batch_size}&tags={self.tag2dl}&page={self.page}"
+        self.page += 1
 
     def run(self):
-        while super(YandeAll, self).run():
-            print('-' * 7)
+        for tag in self.tags:
+            print(f'update tag = {tag}')
+            self.tag2dl = tag
+            while super(YandeAll, self).run():
+                print('-' * 7)
+            self.page = 1
 
 
 # TODO: 如果请求太多的话还是分批比较好

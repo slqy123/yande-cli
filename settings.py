@@ -14,6 +14,10 @@ TAGS = ['bondage', 'loli', 'pee', 'vibrator',
 # 图片在手机中的存放位置
 ROOT = "sdcard/ADM/.comic"
 
+# 在根据tag请求图片时，每次请求的图片数量，最大为1000
+YANDE_ALL_UPDATE_SIZE = 1000
+assert YANDE_ALL_UPDATE_SIZE <= 1000
+
 # constants
 MB = 1024 * 1024
 CLEAR = "\033[1K\r"
