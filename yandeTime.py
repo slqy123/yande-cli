@@ -8,16 +8,15 @@ import time
 
 import tqdm
 import re
-from database import ss, Image
+from database import ss, Image, Tag
 from utils import check_exists
 from settings import IMG_PATH, TAGS, CLEAR, STATUS, YANDE_ALL_UPDATE_SIZE
-
-INFO_KEY = ['id', 'file_ext', 'tags', 'file_url', 'author', 'creator_id']
 
 
 # TODO 不依靠json文件，可以选择使用pickle来存储
 class BaseYandeSpider:
     METHOD = 'BASE'
+    INFO_KEY = ['id', 'file_ext', 'tags', 'file_url', 'author', 'creator_id']
 
     def __init__(self, tags=None):
         '''mode 可选择 refresh, 定时更新  以及all, 下载全部'''
@@ -90,7 +89,7 @@ class BaseYandeSpider:
                 })
                 continue
             for item in resJson:
-                img_infos.append({key: item.get(key, None) for key in INFO_KEY})
+                img_infos.append({key: item.get(key, None) for key in self.INFO_KEY})
                 if item['status'] == 'deleted':
                     img_infos[-1]['status'] = 'deleted'
                     img_infos[-1]['flag_detail'] = {'reason': item["flag_detail"]["reason"]}
@@ -128,6 +127,12 @@ class BaseYandeSpider:
                 if info.get(key, None) != getattr(image, key):
                     setattr(image, key, info.get(key, None))
             image.last_update_date = datetime.date.today()
+
+            # 更新多对多表的tag_refs，在考虑要不一要加入这个表
+            img.tag_refs.clear()
+            for tag in img.tags.split(' '):
+                tag_instance = Tag.get_unique(tag)
+                img.tag_refs.append(tag_instance)
 
         assert info['id']
         check_res = check_exists(Image, id=info['id'])
@@ -201,12 +206,9 @@ class BaseYandeSpider:
 class YandeDaily(BaseYandeSpider):
     METHOD = 'DAILY'
 
-    def __init__(self, *args, **kwargs):
-        super(YandeDaily, self).__init__(*args, **kwargs)
-
-        with open('infos.json') as f:
-            self.settings = json.loads(f.read())
-
+    def __init__(self):
+        super(YandeDaily, self).__init__()
+        self.settings = {}
     def refresh(self):
         begin = datetime.date(*[int(i)
                                 for i in self.settings['last'].split('-')])
@@ -220,7 +222,15 @@ class YandeDaily(BaseYandeSpider):
             begin += delta
 
     def run(self):
-        super(YandeDaily, self).run()
+        if not os.path.exists('infos.json'):
+            print('This is your first time to run, so the current time will be set to be your last update time. '
+                  'Next time when you run this command, all images with TAGS in this period will be updated')
+            self.settings = {'max_id': 0}
+            self.img_result = [{'id': 0}]
+        else:
+            with open('infos.json') as f:
+                self.settings = json.loads(f.read())
+            super(YandeDaily, self).run()
 
         ids = [info['id'] for info in self.img_result]
 

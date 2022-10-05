@@ -3,6 +3,8 @@ IMG_PATH = "G:/yande/images"
 DOWNLOAD_PATH = 'F:/yande_dl'
 EXCEPTION_PATH = 'G:/yande/Exceptions'
 
+
+ADB_PATH = r'C:\scoop\adb\adb.exe'
 # 运行 adb devices 第一列就是
 DEVICE_ID = 'QKXUT20611001197'
 

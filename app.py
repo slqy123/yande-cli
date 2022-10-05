@@ -30,12 +30,13 @@ def call(command):
 IMG_PATH_EXISTS = os.path.exists(IMG_PATH)
 DOWNLOAD_PATH_EXISTS = os.path.exists(DOWNLOAD_PATH)
 EXCEPTION_PATH_EXISTS = os.path.exists(EXCEPTION_PATH)
-DEVICE_AVAILABLE = True if DEVICE_ID in call('adb2 devices') else False
+DEVICE_AVAILABLE = True if DEVICE_ID in call(f'"{ADB_PATH}" devices') else False
 
 
 def get_description_from_trace(trace):
     trace_path = get_folder_name_from_trace(trace)
-    img_num = int(call(f'adb2 -s {DEVICE_ID} shell "cd {ROOT}/{trace_path} && ls -l |grep ^-|wc -l"')) if DEVICE_AVAILABLE else None
+    img_num = int(call(
+        f'"{ADB_PATH}" -s {DEVICE_ID} shell "cd {ROOT}/{trace_path} && ls -l |grep ^-|wc -l"')) if DEVICE_AVAILABLE else None
     return f"id={trace.id},image star = {trace.img_star} pushed at {str(trace.date)} " \
            f"from {trace.start} to {trace.end}" + ('' if img_num is None else f"({img_num}/{trace.amount})")
 
@@ -70,20 +71,79 @@ def status():
     print(f'last download date is {last_download_date} which is {day_pass.days} days ago')
 
 
+def process_pulled_image(file_name, trace_id):
+    """
+    :param file_name: 存放所有图片文件的文件名
+    :param trace_id: 对应的history_id
+    :return: 更新阅读数据
+    """
+    with open(file_name, encoding='utf-8') as fn:
+        names = fn.read().split('\n')[0:-2]
+    imgs = ss.query(Image).filter(Image.history_id == trace_id).all()
+    count = 0
+    imgs2remove = []
+    for img in imgs:
+        img.count += 1
+        if img.name in names:
+            img.star += 1
+        else:
+            count += 1
+            if img.star == 0:
+                img.status = STATUS.DELETED
+                imgs2remove.append(f'{IMG_PATH}/{img.name}')
+                print(CLEAR + 'delete', img.name, end="", flush=True)
+            else:
+                print(CLEAR + 'filter', img.name, end='', flush=True)
+    print(f'\n{len(imgs2remove)} images removed, {count - len(imgs2remove)} filtered')
+    if not imgs2remove:
+        ss.commit()
+        return
+    print("start removing files?(Y/n)", end="", flush=True)
+    rm: str = input()
+    if rm.strip().lower() == 'y' or rm == '':
+        rm_success_flag = True
+        rm_failed_imgs = []
+
+        for path in imgs2remove:
+            if os.path.exists(path):
+                os.remove(path)
+            else:
+                print(f'file {path} not exists')
+                rm_success_flag = 1 if rm_success_flag is True else rm_success_flag + 1
+                rm_failed_imgs.append(path)
+
+        if rm_success_flag is True:
+            print('files remove successfully')
+        else:
+            with open('file_not_exists.txt', 'w') as f:
+                f.write('\n'.join(rm_failed_imgs))
+            print(f'{rm_success_flag} files failed to delete, see ./file_not_exists.txt for details')
+
+        ss.commit()
+
+
 @click.command(help='Push [AMOUNT] images to your mobile device [--times] times')
 @click.argument('amount', type=click.INT, default=100)
-@click.option('-t', '--times', type=click.INT, default=1, show_default=True, help='How many times you want to push')
-def push(amount: int, times: int) -> None:
+@click.option('-n', '--num', 'times', type=click.INT, default=1, show_default=True, help='How many times you want to push')
+@click.option('-t', '--tag', type=str, default='', help='specify the the tag of the image you want to push')
+@click.option('-r', '--random', is_flag=True, default=False, show_default=True,
+              help='should images order randomly, default is by id')
+def push(amount: int, times: int, tag: str, random: bool) -> None:
     assert DEVICE_AVAILABLE and IMG_PATH_EXISTS
 
     def _push():
         min_count = ss.query(func.min(Image.count)).filter(
             Image.star == Image.count, Image.history.has(finish=True)).first()[0]
         print(f"min count = {min_count}")
-        imgs = list(ss.query(Image).filter(Image.star == Image.count,
+        img_query = ss.query(Image).filter(Image.star == Image.count,
                                            Image.count == min_count,
-                                           Image.history.has(finish=True)
-                                           ).limit(amount))
+                                           Image.history.has(finish=True),
+                                           Image.tags.contains(tag)  # 如果不传入tag，默认是空字符，此时等于没过滤
+                                           )
+        if random:
+            img_query = img_query.order_by(func.random())
+
+        imgs = list(img_query.limit(amount))
 
         minId = imgs[0].id
         maxId = imgs[-1].id
@@ -102,12 +162,12 @@ def push(amount: int, times: int) -> None:
         print(f"{len(imgs)} images in total from {minId} to {maxId}")
 
         target = f'{ROOT}/{get_folder_name_from_trace(trace)}'
-        call(f'adb2 -s {DEVICE_ID} shell "mkdir {target}"')
+        call(f'"{ADB_PATH}" -s {DEVICE_ID} shell "mkdir {target}"')
         with trange(length) as t:
             for i in t:
                 img = imgs[i]
                 t.set_description(f"id={img.id}")
-                call_res = call(f'adb2 -s {DEVICE_ID} push "{IMG_PATH}/{img.name}" "{target}/{img.name}"')
+                call_res = call(f'"{ADB_PATH}" -s {DEVICE_ID} push "{IMG_PATH}/{img.name}" "{target}/{img.name}"')
                 if '1 file pushed' in call_res:
                     size = int(re.search(r"(\d+) bytes", call_res).group(1)) / MB
                     t.set_postfix(size=f"{round(size, 2)}MB")
@@ -145,72 +205,23 @@ def history_select(_all):
 
 
 @click.command(help='pull a history from your mobile device and update the information')
-@click.option('-a', '--all', '_all', is_flag=True, default=False, show_default=True, help='If this flag is added, pull all histories')
+@click.option('-a', '--all', '_all', is_flag=True, default=False, show_default=True,
+              help='If this flag is added, pull all histories')
 def pull(_all=False):
     assert DEVICE_AVAILABLE and IMG_PATH_EXISTS
-
-    def process_pulled_image(file_name, trace_id):
-        """
-        :param file_name: 存放所有图片文件的文件名
-        :param trace_id: 对应的history_id
-        :return: 更新阅读数据
-        """
-        with open(file_name, encoding='utf-8') as fn:
-            names = fn.read().split('\n')[0:-2]
-        imgs = ss.query(Image).filter(Image.history_id == trace_id).all()
-        count = 0
-        imgs2remove = []
-        for img in imgs:
-            img.count += 1
-            if img.name in names:
-                img.star += 1
-            else:
-                count += 1
-                if img.star == 0:
-                    img.status = STATUS.DELETED
-                    imgs2remove.append(f'{IMG_PATH}/{img.name}')
-                    print(CLEAR + 'delete', img.name, end="", flush=True)
-                else:
-                    print(CLEAR + 'filter', img.name, end='', flush=True)
-        print(f'\n{len(imgs2remove)} images removed, {count - len(imgs2remove)} filtered')
-        if not imgs2remove:
-            ss.commit()
-            return
-        print("start removing files?(Y/n)", end="", flush=True)
-        rm: str = input()
-        if rm.strip().lower() == 'y' or rm == '':
-            rm_success_flag = True
-            rm_failed_imgs = []
-
-            for path in imgs2remove:
-                if os.path.exists(path):
-                    os.remove(path)
-                else:
-                    print(f'file {path} not exists')
-                    rm_success_flag = 1 if rm_success_flag is True else rm_success_flag + 1
-                    rm_failed_imgs.append(path)
-
-            if rm_success_flag is True:
-                print('files remove successfully')
-            else:
-                with open('file_not_exists.txt', 'w') as f:
-                    f.write('\n'.join(rm_failed_imgs))
-                print(f'{rm_success_flag} files failed to delete, see ./file_not_exists.txt for details')
-
-            ss.commit()
 
     def pull_one(_trace):
         ss.add(_trace)
         _trace.finish = True
         dir_name = get_folder_name_from_trace(_trace)
         target = f"{ROOT}/{dir_name}"
-        call(f'adb2 -s {DEVICE_ID} shell "cd {target} && ls > out.txt && exit"')
-        call(f'adb2 -s {DEVICE_ID} pull {target}/out.txt ./')
-        call(f'adb2 -s {DEVICE_ID} shell "rm {target}/out.txt"')
+        call(f'"{ADB_PATH}" -s {DEVICE_ID} shell "cd {target} && ls > out.txt && exit"')
+        call(f'"{ADB_PATH}" -s {DEVICE_ID} pull {target}/out.txt ./')
+        call(f'"{ADB_PATH}" -s {DEVICE_ID} shell "rm {target}/out.txt"')
 
         process_pulled_image('out.txt', _trace.id)
 
-        call(f'adb2 -s {DEVICE_ID} shell rm -rf {target}')
+        call(f'"{ADB_PATH}" -s {DEVICE_ID} shell rm -rf {target}')
 
     if _all:
         input('are you sure?')
@@ -287,7 +298,8 @@ def trans(count: int = 0):
     ss.commit()
 
 
-@click.command(help='Move download images from the download folder to image folder. if amount not given, default to move all images')
+@click.command(
+    help='Move download images from the download folder to image folder. if amount not given, default to move all images')
 @click.argument('amount', type=int, default=0)
 def add(amount: int = 0):
     assert DOWNLOAD_PATH_EXISTS and IMG_PATH_EXISTS
@@ -362,7 +374,8 @@ def download_yande_imgs(amount: int = 0):
 
 @click.command()
 @click.argument('amount', type=int, default=0)
-@click.option('-m', '--mode', type=click.Choice(['id', 'tag', 'time']), default='time', show_default=True, help='Update mode')
+@click.option('-m', '--mode', type=click.Choice(['id', 'tag', 'time']), default='time', show_default=True,
+              help='Update mode')
 @click.option('-t', '--tag', type=str, default='', help='Tags to update[optional]')
 def update(amount: int = 0, mode: str = 'time', tag: str = ''):
     """
@@ -382,6 +395,10 @@ def update(amount: int = 0, mode: str = 'time', tag: str = ''):
         exists_img_query = ss.query(Image).filter(Image.status == STATUS.EXISTS)
         last_date = exists_img_query.order_by(Image.last_update_date.asc()).first().last_update_date
         img_query = exists_img_query.filter(Image.last_update_date == last_date)
+    else:
+        if mode != 'tag':
+            print('First run this command, please update with "tag" mode')
+            return
 
     if mode == 'id':
         if amount < 1:
