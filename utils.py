@@ -2,6 +2,7 @@ from database import *
 import os
 from settings import *
 import re
+from subprocess import run
 
 
 def get_id_from_url(url: str) -> int:
@@ -68,5 +69,7 @@ def del_exists_link(path: str):
                     fr.write(url + '\n')
 
 
-def get_folder_name_from_trace(trace):
-    return f'{trace.id}-{trace.img_star}-{trace.amount}-{trace.start}-{trace.end}'
+def call(command):
+    # return os.popen().read()
+    result = run(command, check=True, capture_output=True, encoding='utf8')
+    return result.stdout

@@ -1,4 +1,4 @@
-from sqlalchemy import create_engine, Column, Integer, Text, ForeignKey, Date, Boolean, UniqueConstraint
+from sqlalchemy import create_engine, Column, Integer, Text, ForeignKey, Date, Boolean, UniqueConstraint, func
 from sqlalchemy.orm import sessionmaker, relationship
 from sqlalchemy.ext.declarative import declarative_base
 
@@ -10,6 +10,7 @@ engine = create_engine(f'sqlite:///data.db')
 Session = sessionmaker(bind=engine)
 session = Session()
 ss = session
+history_session = Session()
 
 class Image(Base):
     __tablename__ = 'image'
@@ -57,7 +58,7 @@ class Images2Tags(Base):
     UniqueConstraint('game_id', 'tag_name')
 
     id = Column(Integer, primary_key=True, autoincrement=True)
-    game_id = Column(Integer, ForeignKey('image.id'))
+    image_id = Column(Integer, ForeignKey('image.id'))
     tag_name = Column(Integer, ForeignKey('tag.name'))
 
 

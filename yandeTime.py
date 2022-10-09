@@ -10,7 +10,7 @@ import tqdm
 import re
 from database import ss, Image, Tag
 from utils import check_exists
-from settings import IMG_PATH, TAGS, CLEAR, STATUS, YANDE_ALL_UPDATE_SIZE
+from settings import IMG_PATH, TAGS, CLEAR, STATUS, YANDE_ALL_UPDATE_SIZE, UPDATE_FREQ
 
 
 # TODO 不依靠json文件，可以选择使用pickle来存储
@@ -43,6 +43,7 @@ class BaseYandeSpider:
         self.deleted_img_count = 0
         self.download_img_count = 0
         self.reset_img_count = 0
+        self.no_update_img_count = 0
         self.request_interval = 3
 
         if not tags:
@@ -116,9 +117,9 @@ class BaseYandeSpider:
 
         print(
             "total: %d, create: %d, pushed: %d, deleted: %d, downloading: "
-            "%d, update: %d include %d renamed images and %d to reset" %
+            "%d, update: %d include %d renamed images and %d to reset, %d no need to update" %
             (self.total_count, self.created_img_count, self.pushed_img_count, self.deleted_img_count,
-             self.download_img_count, self.updated_img_count, self.renamed_img_count, self.reset_img_count))
+             self.download_img_count, self.updated_img_count, self.renamed_img_count, self.reset_img_count, self.no_update_img_count))
         return True
 
     def process_update_info(self, info):
@@ -160,13 +161,18 @@ class BaseYandeSpider:
             return  # 此后都是数据库中有结果的图片了
 
         if not img.history.finish:  # 图片已经被push了，不要干任何多余的事
-            self.log_fp.write(f'image {img.id} already pushed')
+            self.log_fp.write(f'image {img.id} already pushed\n')
             self.pushed_img_count += 1
             return
 
         if img.status == STATUS.DOWNLOADING:
-            self.log_fp.write(f'image {img.id} is in download queue')
+            self.log_fp.write(f'image {img.id} is in download queue\n')
             self.download_img_count += 1
+            return
+
+        if (datetime.date.today() - img.last_update_date).days < UPDATE_FREQ:
+            self.log_fp.write(f'image {img.id} is no need to update\n')
+            self.no_update_img_count += 1
             return
 
         self.log_fp.write(f'update :{img.name}"\n')
@@ -176,14 +182,15 @@ class BaseYandeSpider:
         old_path = os.path.join(IMG_PATH, img.name)
         new_path = os.path.join(IMG_PATH, new_name)
         img.name = new_name
-        if not os.path.exists(old_path):
-            if img.status == STATUS.EXISTS:
-                msg = f'file not found "{old_path} redownload this image"\n'
-                print(msg, end='')
-                self.reset_img_count += 1
-                self.log_fp.write(msg)
-                img.status = STATUS.QUEUING
-            return
+        # 这个太浪费时间了
+        # if not os.path.exists(old_path):
+        #     if img.status == STATUS.EXISTS:
+        #         msg = f'file not found "{old_path} redownload this image"\n'
+        #         print(msg, end='')
+        #         self.reset_img_count += 1
+        #         self.log_fp.write(msg)
+        #         img.status = STATUS.QUEUING
+        #     return
 
         if img.name != new_name:  # 这意味着文件要重命名
             self.log_fp.write(f'rename to "{new_name}"\n')
@@ -206,12 +213,11 @@ class BaseYandeSpider:
 class YandeDaily(BaseYandeSpider):
     METHOD = 'DAILY'
 
-    def __init__(self):
-        super(YandeDaily, self).__init__()
+    def __init__(self, *args, **kwargs):
+        super(YandeDaily, self).__init__(*args, **kwargs)
         self.settings = {}
     def refresh(self):
-        begin = datetime.date(*[int(i)
-                                for i in self.settings['last'].split('-')])
+        begin = datetime.date(*[int(i) for i in self.settings['last'].split('-')])
         end = datetime.date.today()
         print(begin, end)
         input('confirm?')

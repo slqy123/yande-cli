@@ -3,15 +3,17 @@ IMG_PATH = "G:/yande/images"
 DOWNLOAD_PATH = 'F:/yande_dl'
 EXCEPTION_PATH = 'G:/yande/Exceptions'
 
-
 ADB_PATH = r'C:\scoop\adb\adb.exe'
 # 运行 adb devices 第一列就是
 DEVICE_ID = 'QKXUT20611001197'
 
+# 更新的频率(天)，即如果一个图片的上次更新时间距离今天超过这个时间，则触发更新
+UPDATE_FREQ = 30
+
 # 默认的tag，update时会用
 TAGS = ['bondage', 'loli', 'pee', 'vibrator',
         'anal', 'dildo', 'anal_beads', 'masturbation', 'yuri',
-        'cunnilingus', 'fingering', 'pussy_juice', 'fellatio', 'handjob', 'nopan']
+        'cunnilingus', 'fingering', 'pussy_juice', 'fellatio', 'handjob', 'nopan', 'nekomimi']
 
 # 图片在手机中的存放位置
 ROOT = "sdcard/ADM/.comic"
@@ -30,3 +32,6 @@ class STATUS:
     DELETED = 1
     QUEUING = 2
     DOWNLOADING = 3
+
+
+

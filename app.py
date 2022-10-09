@@ -1,44 +1,23 @@
 # -*- coding: UTF-8 -*-
 import os
-
-os.chdir(os.path.split(__file__)[0])
+os.chdir(os.path.split(os.path.abspath(__file__))[0])
 import re
-import shutil
-
-from sqlalchemy import func
-from database import *
-from settings import *
-from datetime import date
-from tqdm import trange
-import click
-import inquirer
-from subprocess import run
-# from subprocess import call 重新定义了一个call函数，会返回输出的内容
-from utils import get_folder_name_from_trace, process_image, check_exists, check_img_change
 from random import sample
 
+import shutil
+from tqdm import trange
+import click
+
+from database import *
+from settings import *
+from status import *
+from history import YandeHistory
+from utils import check_exists, call
 from yandeTime import YandeDaily, YandeId, YandeAll
 
-
-def call(command):
-    # return os.popen().read()
-    result = run(command, check=True, capture_output=True, encoding='utf8')
-    return result.stdout
+# TODO 增加在本地浏览，具体细节参加jupyter
 
 
-# 全局的状态信息
-IMG_PATH_EXISTS = os.path.exists(IMG_PATH)
-DOWNLOAD_PATH_EXISTS = os.path.exists(DOWNLOAD_PATH)
-EXCEPTION_PATH_EXISTS = os.path.exists(EXCEPTION_PATH)
-DEVICE_AVAILABLE = True if DEVICE_ID in call(f'"{ADB_PATH}" devices') else False
-
-
-def get_description_from_trace(trace):
-    trace_path = get_folder_name_from_trace(trace)
-    img_num = int(call(
-        f'"{ADB_PATH}" -s {DEVICE_ID} shell "cd {ROOT}/{trace_path} && ls -l |grep ^-|wc -l"')) if DEVICE_AVAILABLE else None
-    return f"id={trace.id},image star = {trace.img_star} pushed at {str(trace.date)} " \
-           f"from {trace.start} to {trace.end}" + ('' if img_num is None else f"({img_num}/{trace.amount})")
 
 
 @click.group()
@@ -51,15 +30,15 @@ def status():
     # TODO 显示当前连接情况settings里的
     total_num = ss.query(Image).count()
     exist_num = ss.query(Image).filter(Image.status == STATUS.EXISTS).count()
-    traces = ss.query(History).filter(History.finish == False).all()
+    histories = YandeHistory.get_all_unfinished_histories()
     print(f"{total_num} images in total, {exist_num} exists, {total_num - exist_num} are deleted")
 
     if not DEVICE_AVAILABLE:
         print('Device is not available, can\'t get detailed history information')
     choices = []
-    for i, trace in enumerate(traces):
-        choices.append(f'[{i}]:{get_description_from_trace(trace=trace)}')
-    print(f"{len(traces)} push histories are not updated, they are:")
+    for i, history in enumerate(histories):
+        choices.append(f'[{i}]:{YandeHistory.get_description_from_history(history)}')
+    print(f"{len(histories)} push histories are not updated, they are:")
     print(*choices, sep='\n')
 
     import json
@@ -71,60 +50,10 @@ def status():
     print(f'last download date is {last_download_date} which is {day_pass.days} days ago')
 
 
-def process_pulled_image(file_name, trace_id):
-    """
-    :param file_name: 存放所有图片文件的文件名
-    :param trace_id: 对应的history_id
-    :return: 更新阅读数据
-    """
-    with open(file_name, encoding='utf-8') as fn:
-        names = fn.read().split('\n')[0:-2]
-    imgs = ss.query(Image).filter(Image.history_id == trace_id).all()
-    count = 0
-    imgs2remove = []
-    for img in imgs:
-        img.count += 1
-        if img.name in names:
-            img.star += 1
-        else:
-            count += 1
-            if img.star == 0:
-                img.status = STATUS.DELETED
-                imgs2remove.append(f'{IMG_PATH}/{img.name}')
-                print(CLEAR + 'delete', img.name, end="", flush=True)
-            else:
-                print(CLEAR + 'filter', img.name, end='', flush=True)
-    print(f'\n{len(imgs2remove)} images removed, {count - len(imgs2remove)} filtered')
-    if not imgs2remove:
-        ss.commit()
-        return
-    print("start removing files?(Y/n)", end="", flush=True)
-    rm: str = input()
-    if rm.strip().lower() == 'y' or rm == '':
-        rm_success_flag = True
-        rm_failed_imgs = []
-
-        for path in imgs2remove:
-            if os.path.exists(path):
-                os.remove(path)
-            else:
-                print(f'file {path} not exists')
-                rm_success_flag = 1 if rm_success_flag is True else rm_success_flag + 1
-                rm_failed_imgs.append(path)
-
-        if rm_success_flag is True:
-            print('files remove successfully')
-        else:
-            with open('file_not_exists.txt', 'w') as f:
-                f.write('\n'.join(rm_failed_imgs))
-            print(f'{rm_success_flag} files failed to delete, see ./file_not_exists.txt for details')
-
-        ss.commit()
-
-
 @click.command(help='Push [AMOUNT] images to your mobile device [--times] times')
 @click.argument('amount', type=click.INT, default=100)
-@click.option('-n', '--num', 'times', type=click.INT, default=1, show_default=True, help='How many times you want to push')
+@click.option('-n', '--num', 'times', type=click.INT, default=1, show_default=True,
+              help='How many times you want to push')
 @click.option('-t', '--tag', type=str, default='', help='specify the the tag of the image you want to push')
 @click.option('-r', '--random', is_flag=True, default=False, show_default=True,
               help='should images order randomly, default is by id')
@@ -145,25 +74,13 @@ def push(amount: int, times: int, tag: str, random: bool) -> None:
 
         imgs = list(img_query.limit(amount))
 
-        minId = imgs[0].id
-        maxId = imgs[-1].id
-        length = len(imgs)
-        today = date.today()
-        trace = History(
-            date=today,
-            start=minId,
-            end=maxId,
-            amount=length,
-            img_star=min_count
-        )
-        ss.add(trace)
-        ss.commit()
+        yande_history = YandeHistory.create_new(imgs)
 
-        print(f"{len(imgs)} images in total from {minId} to {maxId}")
+        print(f"{len(imgs)} images in total from {yande_history.start} to {yande_history.end}")
 
-        target = f'{ROOT}/{get_folder_name_from_trace(trace)}'
+        target = f'{ROOT}/{yande_history.get_folder_name()}'
         call(f'"{ADB_PATH}" -s {DEVICE_ID} shell "mkdir {target}"')
-        with trange(length) as t:
+        with trange(yande_history.amount) as t:
             for i in t:
                 img = imgs[i]
                 t.set_description(f"id={img.id}")
@@ -174,34 +91,12 @@ def push(amount: int, times: int, tag: str, random: bool) -> None:
                 else:
                     print('error! :: ', call_res)
                     return None
-                img.history_id = trace.id
-        print(f'{length} pushed')
+                img.history = yande_history.history
+        print(f'push complete')
         ss.commit()
 
     for _ in range(times):
         _push()
-
-
-def history_select(_all):
-    history = ss.query(History).filter(History.finish == False, History.id > 0).all()
-    choices = []
-    for i, trace in enumerate(history):
-        choices.append(f'[{i}]:{get_description_from_trace(trace=trace)}')
-
-    if _all:
-        return history
-    else:
-        question = [
-            inquirer.List(
-                'choice',
-                message='which history do you want to pull?',
-                choices=choices
-            )
-        ]
-        ans = inquirer.prompt(question)
-        index = re.match(r'\[(\d+)', ans['choice']).group(1)
-        trace = history[int(index)]
-        return trace
 
 
 @click.command(help='pull a history from your mobile device and update the information')
@@ -210,31 +105,70 @@ def history_select(_all):
 def pull(_all=False):
     assert DEVICE_AVAILABLE and IMG_PATH_EXISTS
 
-    def pull_one(_trace):
-        ss.add(_trace)
-        _trace.finish = True
-        dir_name = get_folder_name_from_trace(_trace)
+    def pull_one(yande_history: YandeHistory):
+        yande_history.set(commit=True, finish=True)
+        dir_name = yande_history.get_folder_name()
         target = f"{ROOT}/{dir_name}"
-        call(f'"{ADB_PATH}" -s {DEVICE_ID} shell "cd {target} && ls > out.txt && exit"')
+        call(f'"{ADB_PATH}" -s {DEVICE_ID} shell "cd {target} && ls > out.txt"')
         call(f'"{ADB_PATH}" -s {DEVICE_ID} pull {target}/out.txt ./')
         call(f'"{ADB_PATH}" -s {DEVICE_ID} shell "rm {target}/out.txt"')
 
-        process_pulled_image('out.txt', _trace.id)
+        with open('out.txt', encoding='utf-8') as fn:
+            names = fn.read().split('\n')[0:-2]
+        imgs = ss.query(Image).filter(Image.history == yande_history.history).all()
+        count = 0
+        imgs2remove = []
+        for img in imgs:
+            img.count += 1
+            if img.name in names:
+                img.star += 1
+            else:
+                count += 1
+                if img.star == 0:
+                    img.status = STATUS.DELETED
+                    imgs2remove.append(f'{IMG_PATH}/{img.name}')
+                    print(CLEAR + 'delete', img.name, end="", flush=True)
+                else:
+                    print(CLEAR + 'filter', img.name, end='', flush=True)
+        print(f'\n{len(imgs2remove)} images removed, {count - len(imgs2remove)} filtered')
+        if not imgs2remove:
+            return
+        print("start removing files?(Y/n)", end="", flush=True)
+        rm: str = input()
+        if rm.strip().lower() == 'y' or rm == '':
+            rm_success_flag = True
+            rm_failed_imgs = []
+
+            for path in imgs2remove:
+                if os.path.exists(path):
+                    os.remove(path)
+                else:
+                    print(f'file {path} not exists')
+                    rm_success_flag = 1 if rm_success_flag is True else rm_success_flag + 1
+                    rm_failed_imgs.append(path)
+
+            if rm_success_flag is True:
+                print('files remove successfully')
+            else:
+                with open('file_not_exists.txt', 'w') as f:
+                    f.write('\n'.join(rm_failed_imgs))
+                print(f'{rm_success_flag} files failed to delete, see ./file_not_exists.txt for details')
 
         call(f'"{ADB_PATH}" -s {DEVICE_ID} shell rm -rf {target}')
 
     if _all:
         input('are you sure?')
-        history = history_select(_all=True)
-        for trace in history:
-            pull_one(trace)
+        histories = YandeHistory.get_all_unfinished_histories()
+        for history in histories:
+            pull_one(YandeHistory.select(history))
     else:
-        trace = history_select(_all=False)
-        pull_one(trace)
+        yande_history = YandeHistory.select()
+        pull_one(yande_history)
 
     ss.commit()
 
 
+'''
 @click.command()
 @click.argument('count', type=int, default=0)
 def trans(count: int = 0):
@@ -296,10 +230,11 @@ def trans(count: int = 0):
 
     print(f'{img_count} added in total')
     ss.commit()
+'''
 
 
-@click.command(
-    help='Move download images from the download folder to image folder. if amount not given, default to move all images')
+@click.command(help='Move download images from the download folder to image folder. \
+if amount not given, default to move all images')
 @click.argument('amount', type=int, default=0)
 def add(amount: int = 0):
     assert DOWNLOAD_PATH_EXISTS and IMG_PATH_EXISTS
@@ -357,13 +292,16 @@ def download_yande_imgs(amount: int = 0):
                 return
             amount = total_amount
 
-        imgs = ss.query(Image).filter(Image.status == STATUS.QUEUING).limit(amount)
-        for img in imgs:
-            assert img.name
-            assert img.file_url
+        imgs = list(ss.query(Image).filter(Image.status == STATUS.QUEUING).limit(amount))
+        with trange(len(imgs)) as t:
+            for i in t:
+                img = imgs[i]
+                t.set_description(f'id={img.id}')
+                assert img.name
+                assert img.file_url
 
-            call(f'IDMan /d "{img.file_url}" /p "{DOWNLOAD_PATH}" /f "{img.name}" /a')
-            img.status = STATUS.DOWNLOADING
+                call(f'IDMan /d "{img.file_url}" /p "{DOWNLOAD_PATH}" /f "{img.name}" /a')
+                img.status = STATUS.DOWNLOADING
 
         call('IDMan /s')
         ss.commit()
@@ -387,7 +325,8 @@ def update(amount: int = 0, mode: str = 'time', tag: str = ''):
 
         tag: update by the given tag, make sure to add --tag option if you use this mode
 
-        time: update all images of default tags from last update time to now
+        time: update all images of default tags from last update time to now,
+        if the option --tag is 'all', all images no matter what tags will be updated
     """
     assert IMG_PATH_EXISTS
 
@@ -428,7 +367,8 @@ def update(amount: int = 0, mode: str = 'time', tag: str = ''):
         yande = YandeAll(tags=[tag])
         yande.run()
     elif mode == 'time':
-        yande = YandeDaily()
+        tags = ('',) if tag == 'all' else None
+        yande = YandeDaily(tags)
         yande.run()
 
 
@@ -443,7 +383,7 @@ def test():
 if __name__ == '__main__':
     main_group.add_command(push)
     main_group.add_command(pull)
-    main_group.add_command(trans)
+    # main_group.add_command(trans)
     main_group.add_command(add)
     main_group.add_command(download_yande_imgs)
     main_group.add_command(status)
