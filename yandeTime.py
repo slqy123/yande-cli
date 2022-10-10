@@ -10,7 +10,7 @@ import tqdm
 import re
 from database import ss, Image, Tag
 from utils import check_exists
-from settings import IMG_PATH, TAGS, CLEAR, STATUS, YANDE_ALL_UPDATE_SIZE, UPDATE_FREQ
+from settings import IMG_PATH, TAGS, CLEAR, STATUS, YANDE_ALL_UPDATE_SIZE, UPDATE_FREQ, TAGTYPE, RATING
 
 
 # TODO 不依靠json文件，可以选择使用pickle来存储
@@ -74,7 +74,7 @@ class BaseYandeSpider:
         for res in grequests.map(rs, size=3, exception_handler=self.handle):
             try:
                 resJson = json.loads(res.text)
-            except:
+            except Exception as _:
                 if res is None:
                     print('response is None')
                     continue
@@ -91,7 +91,7 @@ class BaseYandeSpider:
                 continue
             for item in resJson:
                 img_infos.append({key: item.get(key, None) for key in self.INFO_KEY})
-                if item['status'] == 'deleted':
+                if item.get('status', None) == 'deleted':
                     img_infos[-1]['status'] = 'deleted'
                     img_infos[-1]['flag_detail'] = {'reason': item["flag_detail"]["reason"]}
                     print(f'deleted image id:{item["id"]} for reason: {item["flag_detail"]["reason"]}')
@@ -119,14 +119,15 @@ class BaseYandeSpider:
             "total: %d, create: %d, pushed: %d, deleted: %d, downloading: "
             "%d, update: %d include %d renamed images and %d to reset, %d no need to update" %
             (self.total_count, self.created_img_count, self.pushed_img_count, self.deleted_img_count,
-             self.download_img_count, self.updated_img_count, self.renamed_img_count, self.reset_img_count, self.no_update_img_count))
+             self.download_img_count, self.updated_img_count, self.renamed_img_count, self.reset_img_count,
+             self.no_update_img_count))
         return True
 
     def process_update_info(self, info):
         def update_one(image):
             for key in ('tags', 'author', 'creator_id', 'file_url'):
-                if info.get(key, None) != getattr(image, key):
-                    setattr(image, key, info.get(key, None))
+                setattr(image, key, info.get(key, None))
+            setattr(image, "rating", RATING(info.get("rating", None)))
             image.last_update_date = datetime.date.today()
 
             # 更新多对多表的tag_refs，在考虑要不一要加入这个表
@@ -216,6 +217,7 @@ class YandeDaily(BaseYandeSpider):
     def __init__(self, *args, **kwargs):
         super(YandeDaily, self).__init__(*args, **kwargs)
         self.settings = {}
+
     def refresh(self):
         begin = datetime.date(*[int(i) for i in self.settings['last'].split('-')])
         end = datetime.date.today()
@@ -280,6 +282,35 @@ class YandeId(BaseYandeSpider):
     def refresh(self):
         for id_ in self.ids:
             yield "%s?tags=id:%d" % (self.post_url, id_)
+
+
+class TagTypeSpider(BaseYandeSpider):
+    METHOD = 'TAGTYPE'
+    INFO_KEY = ['id', 'name', 'type']
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.page = 1
+        self.tag2dl = None
+        self.batch_size = YANDE_ALL_UPDATE_SIZE
+
+        self.post_url = self.original_url + "/tag.json"
+
+    def refresh(self):
+        yield f"{self.post_url}?limit={self.batch_size}&type={self.tag2dl}&page={self.page}"
+        self.page += 1
+
+    def run(self):
+        for tag in self.tags:
+            print(f'update tag = {tag}')
+            self.tag2dl = tag
+            while super(TagTypeSpider, self).run():
+                print('-' * 7)
+            self.page = 1
+
+    def process_update_info(self, info):
+        tag = Tag.get_unique(info['name'])
+        tag.type = TAGTYPE(info['type'])
 
 
 if __name__ == '__main__':

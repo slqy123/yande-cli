@@ -1,5 +1,6 @@
 # -*- coding: UTF-8 -*-
 import os
+
 os.chdir(os.path.split(os.path.abspath(__file__))[0])
 import re
 from random import sample
@@ -13,11 +14,12 @@ from settings import *
 from status import *
 from history import YandeHistory
 from utils import check_exists, call
-from yandeTime import YandeDaily, YandeId, YandeAll
+from yandeTime import YandeDaily, YandeId, YandeAll, TagTypeSpider
+
 
 # TODO 增加在本地浏览，具体细节参加jupyter
-
-
+# 增加为tag添加type的spider(已完成)
+# 修改文件名增加作者信息和其他(文件名就只留id吧，push时再管tag和author)
 
 
 @click.group()
@@ -241,26 +243,27 @@ def add(amount: int = 0):
     all_download_imgs = os.listdir(DOWNLOAD_PATH)
     if amount > 0:
         all_download_imgs = all_download_imgs[: amount]
-    for img in all_download_imgs:
-        checked_img = check_exists(Image, name=img)
+    with trange(len(all_download_imgs)) as t:
+        for img, _ in zip(all_download_imgs, t):
+            checked_img = check_exists(Image, name=img)
 
-        # TODO 验证用的assert
-        if not checked_img:
-            print(f'delete img not found: {img}')
-            os.remove(os.path.join(DOWNLOAD_PATH, img))
-            return
+            # TODO 验证用的assert
+            if not checked_img:
+                print(f'delete img not found: {img}')
+                os.remove(os.path.join(DOWNLOAD_PATH, img))
+                return
+            t.set_description(f'id={checked_img.id}')
 
-        if checked_img.count != 0:
-            print(f'error img {checked_img.id} count = {checked_img.count}')
-            checked_img.count = 0
+            if checked_img.count != 0:
+                print(f'error img {checked_img.id} count = {checked_img.count}')
+                checked_img.count = 0
 
-        assert checked_img.status == STATUS.DOWNLOADING and checked_img.count == 0
+            assert checked_img.status == STATUS.DOWNLOADING and checked_img.count == 0
 
-        src_path = os.path.join(DOWNLOAD_PATH, img)
-        dst_path = os.path.join(IMG_PATH, img)
-        shutil.move(src_path, dst_path)
-        print(f'move {img}')
-        checked_img.status = STATUS.EXISTS
+            src_path = os.path.join(DOWNLOAD_PATH, img)
+            dst_path = os.path.join(IMG_PATH, img)
+            shutil.move(src_path, dst_path)
+            checked_img.status = STATUS.EXISTS
 
     ss.commit()
 
@@ -312,14 +315,14 @@ def download_yande_imgs(amount: int = 0):
 
 @click.command()
 @click.argument('amount', type=int, default=0)
-@click.option('-m', '--mode', type=click.Choice(['id', 'tag', 'time']), default='time', show_default=True,
+@click.option('-m', '--mode', type=click.Choice(['id', 'tag', 'time', 'type']), default='time', show_default=True,
               help='Update mode')
 @click.option('-t', '--tag', type=str, default='', help='Tags to update[optional]')
 def update(amount: int = 0, mode: str = 'time', tag: str = ''):
     """
     Update to fetch the latest [AMOUNT] image's information
 
-    there are three modes your can choose:
+    there are four modes your can choose:
 
         id: update by the last update date of an image
 
@@ -327,6 +330,9 @@ def update(amount: int = 0, mode: str = 'time', tag: str = ''):
 
         time: update all images of default tags from last update time to now,
         if the option --tag is 'all', all images no matter what tags will be updated
+
+        type: update the type of tags, use -t to give the type, it should be a integer, you can see the relation
+        in settings.py
     """
     assert IMG_PATH_EXISTS
 
@@ -369,6 +375,10 @@ def update(amount: int = 0, mode: str = 'time', tag: str = ''):
     elif mode == 'time':
         tags = ('',) if tag == 'all' else None
         yande = YandeDaily(tags)
+        yande.run()
+    elif mode == 'type':
+        tags = [''] if tag == 'all' else [int(tag)]
+        yande = TagTypeSpider(tags)
         yande.run()
 
 

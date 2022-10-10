@@ -1,6 +1,8 @@
-from sqlalchemy import create_engine, Column, Integer, Text, ForeignKey, Date, Boolean, UniqueConstraint, func
+from sqlalchemy import create_engine, Column, Integer, Text, ForeignKey, Date, Boolean, UniqueConstraint, func, Enum
 from sqlalchemy.orm import sessionmaker, relationship
 from sqlalchemy.ext.declarative import declarative_base
+
+from settings import TAGTYPE, RATING
 
 # from os import path
 # DB_PATH = path.split(__file__)[0] + '/test.db'
@@ -27,11 +29,13 @@ class Image(Base):
     author = Column(Text)
     creator_id = Column(Integer)
     status = Column(Integer)
+    rating = Column(Enum(RATING))
 
 
 class Tag(Base):
     __tablename__ = 'tag'
     name = Column(Text, primary_key=True, nullable=False)
+    type = Column(Enum(TAGTYPE))
 
     @classmethod
     def get_unique(cls, name):

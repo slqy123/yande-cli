@@ -1,3 +1,5 @@
+from enum import Enum
+
 # 分别是图片存放位置，下载图片临时存放位置，和出错的图片存放位置（这个好像没啥用）
 IMG_PATH = "G:/yande/images"
 DOWNLOAD_PATH = 'F:/yande_dl'
@@ -34,4 +36,16 @@ class STATUS:
     DOWNLOADING = 3
 
 
+class TAGTYPE(Enum):
+    GENERAL = 0
+    ARTIST = 1
+    COPYRIGHT = 3
+    CHARACTER = 4
+    CIRCLE = 5
+    FAULTS = 6
 
+
+class RATING(Enum):
+    SAFE = 's'
+    QUESTIONABLE = 'q'
+    EXPLICIT = 'e'
