@@ -31,9 +31,14 @@ def main_group():
 def status():
     # TODO 显示当前连接情况settings里的
     total_num = ss.query(Image).count()
-    exist_num = ss.query(Image).filter(Image.status == STATUS.EXISTS).count()
+    status_count = ss.query(Image.status, func.count(1)).group_by(Image.status).all()
+    count_list = [0, 0, 0, 0]
+    for index, count in status_count:
+        count_list[index] = count
+    exist_num, deleted_num, queuing_num, downloading_num = count_list
     histories = YandeHistory.get_all_unfinished_histories()
-    print(f"{total_num} images in total, {exist_num} exists, {total_num - exist_num} are deleted")
+    print(f"{total_num} images in total, {exist_num} exists, {deleted_num} deleted, "
+          f"{queuing_num} waiting for download, {downloading_num} in download queue")
 
     if not DEVICE_AVAILABLE:
         print('Device is not available, can\'t get detailed history information')
@@ -59,14 +64,16 @@ def status():
 @click.option('-t', '--tag', type=str, default='', help='specify the the tag of the image you want to push')
 @click.option('-r', '--random', is_flag=True, default=False, show_default=True,
               help='should images order randomly, default is by id')
-def push(amount: int, times: int, tag: str, random: bool) -> None:
+@click.option('-s', '--star', type=int, default=None, help='the star of image you want to push')
+def push(amount: int, times: int, tag: str, random: bool, star: int = None) -> None:
     assert DEVICE_AVAILABLE and IMG_PATH_EXISTS
 
     def _push():
-        min_count = ss.query(func.min(Image.count)).filter(
+        min_count = star if star is not None else ss.query(func.min(Image.count)).filter(
             Image.star == Image.count, Image.history.has(finish=True)).first()[0]
         print(f"min count = {min_count}")
         img_query = ss.query(Image).filter(Image.star == Image.count,
+                                           Image.status == STATUS.EXISTS,
                                            Image.count == min_count,
                                            Image.history.has(finish=True),
                                            Image.tags.contains(tag)  # 如果不传入tag，默认是空字符，此时等于没过滤
@@ -85,8 +92,11 @@ def push(amount: int, times: int, tag: str, random: bool) -> None:
         with trange(yande_history.amount) as t:
             for i in t:
                 img = imgs[i]
+                tags = ' '.join([t.name for t in img.tag_refs if t.type != TAGTYPE.GENERAL])
+                ext = img.name.rsplit('.', 1)[1]
                 t.set_description(f"id={img.id}")
-                call_res = call(f'"{ADB_PATH}" -s {DEVICE_ID} push "{IMG_PATH}/{img.name}" "{target}/{img.name}"')
+                call_res = call(
+                    f'"{ADB_PATH}" -s {DEVICE_ID} push "{IMG_PATH}/{img.name}" "{target}/{img.id} {tags}.{ext}"')
                 if '1 file pushed' in call_res:
                     size = int(re.search(r"(\d+) bytes", call_res).group(1)) / MB
                     t.set_postfix(size=f"{round(size, 2)}MB")
@@ -117,12 +127,13 @@ def pull(_all=False):
 
         with open('out.txt', encoding='utf-8') as fn:
             names = fn.read().split('\n')[0:-2]
+            ids = [int(re.match(r'\d+', name).group()) for name in names]
         imgs = ss.query(Image).filter(Image.history == yande_history.history).all()
         count = 0
         imgs2remove = []
         for img in imgs:
             img.count += 1
-            if img.name in names:
+            if img.id in ids:
                 img.star += 1
             else:
                 count += 1
@@ -133,28 +144,27 @@ def pull(_all=False):
                 else:
                     print(CLEAR + 'filter', img.name, end='', flush=True)
         print(f'\n{len(imgs2remove)} images removed, {count - len(imgs2remove)} filtered')
-        if not imgs2remove:
-            return
-        print("start removing files?(Y/n)", end="", flush=True)
-        rm: str = input()
-        if rm.strip().lower() == 'y' or rm == '':
-            rm_success_flag = True
-            rm_failed_imgs = []
+        if imgs2remove:
+            print("start removing files?(Y/n)", end="", flush=True)
+            rm: str = input()
+            if rm.strip().lower() == 'y' or rm == '':
+                rm_success_flag = True
+                rm_failed_imgs = []
 
-            for path in imgs2remove:
-                if os.path.exists(path):
-                    os.remove(path)
+                for path in imgs2remove:
+                    if os.path.exists(path):
+                        os.remove(path)
+                    else:
+                        print(f'file {path} not exists')
+                        rm_success_flag = 1 if rm_success_flag is True else rm_success_flag + 1
+                        rm_failed_imgs.append(path)
+
+                if rm_success_flag is True:
+                    print('files remove successfully')
                 else:
-                    print(f'file {path} not exists')
-                    rm_success_flag = 1 if rm_success_flag is True else rm_success_flag + 1
-                    rm_failed_imgs.append(path)
-
-            if rm_success_flag is True:
-                print('files remove successfully')
-            else:
-                with open('file_not_exists.txt', 'w') as f:
-                    f.write('\n'.join(rm_failed_imgs))
-                print(f'{rm_success_flag} files failed to delete, see ./file_not_exists.txt for details')
+                    with open('file_not_exists.txt', 'w') as f:
+                        f.write('\n'.join(rm_failed_imgs))
+                    print(f'{rm_success_flag} files failed to delete, see ./file_not_exists.txt for details')
 
         call(f'"{ADB_PATH}" -s {DEVICE_ID} shell rm -rf {target}')
 
@@ -244,10 +254,9 @@ def add(amount: int = 0):
     if amount > 0:
         all_download_imgs = all_download_imgs[: amount]
     with trange(len(all_download_imgs)) as t:
-        for img, _ in zip(all_download_imgs, t):
+        for _, img in zip(t, all_download_imgs):
             checked_img = check_exists(Image, name=img)
 
-            # TODO 验证用的assert
             if not checked_img:
                 print(f'delete img not found: {img}')
                 os.remove(os.path.join(DOWNLOAD_PATH, img))
@@ -303,7 +312,7 @@ def download_yande_imgs(amount: int = 0):
                 assert img.name
                 assert img.file_url
 
-                call(f'IDMan /d "{img.file_url}" /p "{DOWNLOAD_PATH}" /f "{img.name}" /a')
+                call(f'IDMan /d "{img.file_url}" /p "{DOWNLOAD_PATH}" /f "{img.name}" /a /n')
                 img.status = STATUS.DOWNLOADING
 
         call('IDMan /s')
@@ -318,7 +327,8 @@ def download_yande_imgs(amount: int = 0):
 @click.option('-m', '--mode', type=click.Choice(['id', 'tag', 'time', 'type']), default='time', show_default=True,
               help='Update mode')
 @click.option('-t', '--tag', type=str, default='', help='Tags to update[optional]')
-def update(amount: int = 0, mode: str = 'time', tag: str = ''):
+@click.option('-s', '--start', type=int, default=1, help='which page to start[optional]')
+def update(amount: int = 0, mode: str = 'time', tag: str = '', start: int = 0):
     """
     Update to fetch the latest [AMOUNT] image's information
 
@@ -370,7 +380,7 @@ def update(amount: int = 0, mode: str = 'time', tag: str = ''):
             if user_input.strip().lower() == 'n' or user_input.strip() == '':
                 return
 
-        yande = YandeAll(tags=[tag])
+        yande = YandeAll(tags=[tag], from_page=start)
         yande.run()
     elif mode == 'time':
         tags = ('',) if tag == 'all' else None

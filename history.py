@@ -9,7 +9,7 @@ from utils import call
 
 
 class YandeHistory:
-    history_session = history_session
+    history_session = ss
 
     def __init__(self, history: History):
         self.history = history

@@ -10,7 +10,7 @@ ADB_PATH = r'C:\scoop\adb\adb.exe'
 DEVICE_ID = 'QKXUT20611001197'
 
 # 更新的频率(天)，即如果一个图片的上次更新时间距离今天超过这个时间，则触发更新
-UPDATE_FREQ = 30
+UPDATE_FREQ = 7
 
 # 默认的tag，update时会用
 TAGS = ['bondage', 'loli', 'pee', 'vibrator',

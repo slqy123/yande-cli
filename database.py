@@ -14,6 +14,36 @@ session = Session()
 ss = session
 history_session = Session()
 
+
+class Cache:
+    def __init__(self, cls, pk):
+        self.pk = pk
+        self.cache = None
+        self.cls = cls
+
+    def check_exists(self, key):
+        if self.cache is None:
+            self._fill_cache()
+
+        o = self.cache.get(key)
+        return o
+
+    def get_unique(self, key):
+        o = self.check_exists(key)
+        if o is None:
+            o = self.cls(**{self.pk: key})
+            session.add(o)
+            self.cache[key] = o
+        return o
+
+    def _fill_cache(self):
+        print(f'filling cache {self.cls}')
+        items = session.query(self.cls).all()
+        self.cache = {
+            getattr(item, self.pk): item for item in items
+        }
+
+
 class Image(Base):
     __tablename__ = 'image'
     id = Column(Integer, primary_key=True)
@@ -37,25 +67,6 @@ class Tag(Base):
     name = Column(Text, primary_key=True, nullable=False)
     type = Column(Enum(TAGTYPE))
 
-    @classmethod
-    def get_unique(cls, name):
-        # get the session cache, creating it if necessary
-        cache = session._unique_cache = getattr(session, '_unique_cache', {})
-        # create a key for memorizing
-        key = (cls, name)
-        # check the cache first
-        o = cache.get(key)
-        if o is None:
-            # check the database if it's not in the cache
-            o = session.query(cls).filter_by(name=name).first()
-            if o is None:
-                # create a new one if it's not in the database
-                o = cls(name=name)
-                session.add(o)
-            # update the cache
-            cache[key] = o
-        return o
-
 
 class Images2Tags(Base):
     __tablename__ = 'images2tags'
@@ -77,4 +88,6 @@ class History(Base):
     img_star = Column(Integer)
 
 
+Tag.cache = Cache(Tag, 'name')
+# Image.cache = Cache(Image, 'id')
 Base.metadata.create_all(engine)

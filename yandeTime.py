@@ -2,21 +2,20 @@ import json
 import os
 import sys
 
-import grequests
 import datetime
 import time
 
 import tqdm
 import re
 from database import ss, Image, Tag
-from utils import check_exists
 from settings import IMG_PATH, TAGS, CLEAR, STATUS, YANDE_ALL_UPDATE_SIZE, UPDATE_FREQ, TAGTYPE, RATING
-
+from utils import LazyImport
+grequests = LazyImport('grequests')
 
 # TODO 不依靠json文件，可以选择使用pickle来存储
 class BaseYandeSpider:
     METHOD = 'BASE'
-    INFO_KEY = ['id', 'file_ext', 'tags', 'file_url', 'author', 'creator_id']
+    INFO_KEY = ['id', 'file_ext', 'tags', 'file_url', 'author', 'creator_id', 'rating']
 
     def __init__(self, tags=None):
         '''mode 可选择 refresh, 定时更新  以及all, 下载全部'''
@@ -38,11 +37,9 @@ class BaseYandeSpider:
         self.total_count = 0
         self.created_img_count = 0
         self.updated_img_count = 0
-        self.renamed_img_count = 0
         self.pushed_img_count = 0
         self.deleted_img_count = 0
         self.download_img_count = 0
-        self.reset_img_count = 0
         self.no_update_img_count = 0
         self.request_interval = 3
 
@@ -117,14 +114,15 @@ class BaseYandeSpider:
 
         print(
             "total: %d, create: %d, pushed: %d, deleted: %d, downloading: "
-            "%d, update: %d include %d renamed images and %d to reset, %d no need to update" %
+            "%d, update: %d, %d no need to update" %
             (self.total_count, self.created_img_count, self.pushed_img_count, self.deleted_img_count,
-             self.download_img_count, self.updated_img_count, self.renamed_img_count, self.reset_img_count,
-             self.no_update_img_count))
+             self.download_img_count, self.updated_img_count, self.no_update_img_count))
         return True
 
     def process_update_info(self, info):
         def update_one(image):
+            image.name = f'{info["id"]}.{info["file_ext"]}'
+
             for key in ('tags', 'author', 'creator_id', 'file_url'):
                 setattr(image, key, info.get(key, None))
             setattr(image, "rating", RATING(info.get("rating", None)))
@@ -133,11 +131,11 @@ class BaseYandeSpider:
             # 更新多对多表的tag_refs，在考虑要不一要加入这个表
             img.tag_refs.clear()
             for tag in img.tags.split(' '):
-                tag_instance = Tag.get_unique(tag)
+                tag_instance = Tag.cache.get_unique(tag)
                 img.tag_refs.append(tag_instance)
 
         assert info['id']
-        check_res = check_exists(Image, id=info['id'])
+        check_res = Image.cache.check_exists(info['id'])
         rt = bool(check_res)
         if rt:
             img = check_res
@@ -151,13 +149,11 @@ class BaseYandeSpider:
             self.deleted_img_count += 1
             return  # 此后的图片，info中的信息都全了，就可以获得新名字了
 
-        new_name = f'{info["id"]} {info["author"]}.{info["file_ext"]}'
-        new_name = new_name.translate(str.maketrans(r'/\:*?"<>|', "_________"))
+        # new_name = new_name.translate(str.maketrans(r'/\:*?"<>|', "_________"))
 
         if not rt:
             update_one(img)
-            img.name = new_name
-            self.log_fp.write(f'create "{new_name}"\n')
+            self.log_fp.write(f'create "{img.name}"\n')
             self.created_img_count += 1
             return  # 此后都是数据库中有结果的图片了
 
@@ -180,9 +176,8 @@ class BaseYandeSpider:
         self.updated_img_count += 1
         update_one(img)
 
-        old_path = os.path.join(IMG_PATH, img.name)
-        new_path = os.path.join(IMG_PATH, new_name)
-        img.name = new_name
+        # old_path = os.path.join(IMG_PATH, img.name)
+        # new_path = os.path.join(IMG_PATH, new_name)
         # 这个太浪费时间了
         # if not os.path.exists(old_path):
         #     if img.status == STATUS.EXISTS:
@@ -193,11 +188,11 @@ class BaseYandeSpider:
         #         img.status = STATUS.QUEUING
         #     return
 
-        if img.name != new_name:  # 这意味着文件要重命名
-            self.log_fp.write(f'rename to "{new_name}"\n')
-            self.renamed_img_count += 1
-            os.rename(old_path, new_path)
-            return
+        # if img.name != new_name:  # 这意味着文件要重命名
+        #     self.log_fp.write(f'rename to "{new_name}"\n')
+        #     self.renamed_img_count += 1
+        #     os.rename(old_path, new_path)
+        #     return
 
     def handle(self, req, info):
         print(f"{req.url} 请求失败")
@@ -252,9 +247,9 @@ class YandeDaily(BaseYandeSpider):
 class YandeAll(BaseYandeSpider):
     METHOD = 'ALL'
 
-    def __init__(self, *args, **kwargs):
+    def __init__(self, from_page=1, *args, **kwargs):
         super(YandeAll, self).__init__(*args, **kwargs)
-        self.page = 1
+        self.page = from_page
         self.tag2dl = None
         self.batch_size = YANDE_ALL_UPDATE_SIZE
 
@@ -309,7 +304,7 @@ class TagTypeSpider(BaseYandeSpider):
             self.page = 1
 
     def process_update_info(self, info):
-        tag = Tag.get_unique(info['name'])
+        tag = Tag.cache.get_unique(info['name'])
         tag.type = TAGTYPE(info['type'])
 
 
