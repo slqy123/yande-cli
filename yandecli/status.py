@@ -6,4 +6,4 @@ from utils import call
 IMG_PATH_EXISTS = os.path.exists(IMG_PATH)
 DOWNLOAD_PATH_EXISTS = os.path.exists(DOWNLOAD_PATH)
 EXCEPTION_PATH_EXISTS = os.path.exists(EXCEPTION_PATH)
-DEVICE_AVAILABLE = True if DEVICE_ID in call(f'"{ADB_PATH}" devices') else False
+ADB_AVAILABLE = True if DEVICE_ID in call(f'"{ADB_PATH}" devices') else False

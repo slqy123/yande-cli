@@ -1,10 +1,10 @@
-from status import DEVICE_AVAILABLE
+from yandecli.status import ADB_AVAILABLE
+from yandecli.file_io import get_device_by_platform
 from database import *
 from datetime import date
-import inquirer
 import re
 
-from settings import ADB_PATH, DEVICE_ID, ROOT
+from settings import ADB_PATH, DEVICE_ID, ADB_ROOT
 from utils import call
 
 
@@ -20,9 +20,10 @@ class YandeHistory:
         self.amount = history.amount
         self.img_star = history.img_star
         self.finish = history.finish
+        self.platform = history.platform
 
     @classmethod
-    def create_new(cls, imgs) -> 'YandeHistory':
+    def create_new(cls, imgs, platform: PLATFORM) -> 'YandeHistory':
         minId = imgs[0].id
         maxId = imgs[-1].id
         length = len(imgs)
@@ -34,7 +35,8 @@ class YandeHistory:
             start=minId,
             end=maxId,
             amount=length,
-            img_star=min_star
+            img_star=min_star,
+            platform=platform
         )
         cls.history_session.add(history)
         cls.history_session.commit()
@@ -52,6 +54,7 @@ class YandeHistory:
         for i, history in enumerate(histories):
             choices.append(f'[{i}]:{cls.get_description_from_history(history)}')
 
+        import inquirer
         question = [
             inquirer.List(
                 'choice',
@@ -70,10 +73,13 @@ class YandeHistory:
     @classmethod
     def get_description_from_history(cls, history: History) -> str:
         folder_name = cls.get_folder_name_from_history(history)
-        img_num = int(call(f'"{ADB_PATH}" -s {DEVICE_ID} shell \
-"cd {ROOT}/{folder_name} && ls -l |grep ^-|wc -l"')) if DEVICE_AVAILABLE else None
+        DEVICE = get_device_by_platform(history.platform)
+        device = DEVICE(folder_name)
+#         img_num = int(call(f'"{ADB_PATH}" -s {DEVICE_ID} shell \
+# "cd {ADB_ROOT}/{folder_name} && ls -l |grep ^-|wc -l"')) if ADB_AVAILABLE else None
+        img_num = None if ((not ADB_AVAILABLE) and device.platform == PLATFORM.MOBILE) else len(device.listdir())
         return f"id={history.id},image star = {history.img_star} pushed at {str(history.date)} \
-from {history.start} to {history.end}" + ('' if img_num is None else f"({img_num}/{history.amount})")
+from {history.start} to {history.end} on {history.platform.value}" + ('' if img_num is None else f"({img_num}/{history.amount})")
 
     @classmethod
     def commit_history(cls, history: History):

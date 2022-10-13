@@ -3,7 +3,7 @@ import os
 
 os.chdir(os.path.split(os.path.abspath(__file__))[0])
 import re
-from random import sample
+from random import sample, randrange
 
 import shutil
 from tqdm import trange
@@ -11,15 +11,16 @@ import click
 
 from database import *
 from settings import *
-from status import *
-from history import YandeHistory
+from yandecli.status import *
+from yandecli.history import YandeHistory
 from utils import check_exists, call
-from yande_requests import YandeDaily, YandeId, YandeAll, TagTypeSpider
+from yandecli.yande_requests import YandeDaily, YandeId, YandeAll, TagTypeSpider
+from yandecli.file_io import get_device_by_platform
+
+CONTEXT_SETTINGS = dict(help_option_names=['-h', '--help'])
 
 
-# TODO 增加在本地浏览，具体细节参加jupyter
-
-@click.group()
+@click.group(context_settings=CONTEXT_SETTINGS)
 def main_group():
     pass
 
@@ -37,8 +38,8 @@ def status():
     print(f"{total_num} images in total, {exist_num} exists, {deleted_num} deleted, "
           f"{queuing_num} waiting for download, {downloading_num} in download queue")
 
-    if not DEVICE_AVAILABLE:
-        print('Device is not available, can\'t get detailed history information')
+    if not ADB_AVAILABLE:
+        print('ADB is not available, can\'t get detailed history information from your mobile device')
     choices = []
     for i, history in enumerate(histories):
         choices.append(f'[{i}]:{YandeHistory.get_description_from_history(history)}')
@@ -54,17 +55,19 @@ def status():
     print(f'last download date is {last_download_date} which is {day_pass.days} days ago')
 
 
-@click.command(help='Push [AMOUNT] images to your mobile device [--times] times')
+@click.command(help='Push [AMOUNT] images to your mobile device [--num] times')
 @click.argument('amount', type=click.INT, default=100)
 @click.option('-n', '--num', 'times', type=click.INT, default=1, show_default=True,
               help='How many times you want to push')
 @click.option('-t', '--tag', type=str, default='', help='specify the the tag of the image you want to push')
-@click.option('-r', '--random', is_flag=True, default=False, show_default=True,
-              help='should images order randomly, default is by id')
+@click.option('-r', '--random', type=bool, is_flag=True, default=False, show_default=True,
+              help='should images start from random id')
 @click.option('-s', '--star', type=int, default=None, help='the star of image you want to push')
-def push(amount: int, times: int, tag: str, random: bool, star: int = None) -> None:
-    assert DEVICE_AVAILABLE and IMG_PATH_EXISTS
-
+@click.option('-p', '--platform', type=click.Choice(['MOBILE', 'PC']), default='MOBILE', show_default=True,
+              help='the platform you want to push to')
+def push(amount: int, times: int, tag: str, random: bool, star: int = None, platform: str = 'MOBILE') -> None:
+    assert ADB_AVAILABLE and IMG_PATH_EXISTS
+    DEVICE = get_device_by_platform(PLATFORM(platform))
     def _push():
         min_count = star if star is not None else ss.query(func.min(Image.count)).filter(
             Image.star == Image.count, Image.history.has(finish=True)).first()[0]
@@ -76,30 +79,38 @@ def push(amount: int, times: int, tag: str, random: bool, star: int = None) -> N
                                            Image.tags.contains(tag)  # 如果不传入tag，默认是空字符，此时等于没过滤
                                            )
         if random:
-            img_query = img_query.order_by(func.random())
+            pages = (img_query.count() // amount) + 1
+            rand_page = randrange(0, pages)
+            imgs = img_query.slice(rand_page * amount, (rand_page + 1) * amount).all()
+            print(f'start from page {rand_page + 1}/{pages}')
+        else:
+            imgs = img_query.limit(amount).all()
 
-        imgs = list(img_query.limit(amount))
-
-        yande_history = YandeHistory.create_new(imgs)
+        yande_history = YandeHistory.create_new(imgs, PLATFORM(platform))
 
         print(f"{len(imgs)} images in total from {yande_history.start} to {yande_history.end}")
 
-        target = f'{ROOT}/{yande_history.get_folder_name()}'
-        call(f'"{ADB_PATH}" -s {DEVICE_ID} shell "mkdir {target}"')
+        # target = f'{ADB_ROOT}/{yande_history.get_folder_name()}'
+        # call(f'"{ADB_PATH}" -s {DEVICE_ID} shell "mkdir {target}"')
+        device = DEVICE(yande_history.get_folder_name())
         with trange(yande_history.amount) as t:
             for i in t:
                 img = imgs[i]
                 tags = ' '.join([t.name for t in img.tag_refs if t.type not in (TAGTYPE.GENERAL, TAGTYPE.CHARACTER)])
                 ext = img.name.rsplit('.', 1)[1]
+                new_name = f'{img.id} {tags}.{ext}'
+                new_name = new_name.translate(str.maketrans(r'/\:*?"<>|', "_________"))
                 t.set_description(f"id={img.id}")
-                call_res = call(
-                    f'"{ADB_PATH}" -s {DEVICE_ID} push "{IMG_PATH}/{img.name}" "{target}/{img.id} {tags}.{ext}"')
-                if '1 file pushed' in call_res:
-                    size = int(re.search(r"(\d+) bytes", call_res).group(1)) / MB
-                    t.set_postfix(size=f"{round(size, 2)}MB")
-                else:
-                    print('error! :: ', call_res)
-                    return None
+                # call_res = call(
+                #     f'"{ADB_PATH}" -s {DEVICE_ID} push "{IMG_PATH}/{img.name}" "{target}/{new_name}"')
+                # if '1 file pushed' in call_res:
+                #     size = int(re.search(r"(\d+) bytes", call_res).group(1)) / MB
+                #     t.set_postfix(size=f"{round(size, 2)}MB")
+                # else:
+                #     print('error! :: ', call_res)
+                #     return None
+                size = device.push(img.name, new_name)
+                t.set_postfix(size=f"{round(size, 2)}MB")
                 img.history = yande_history.history
         print(f'push complete')
         ss.commit()
@@ -112,19 +123,22 @@ def push(amount: int, times: int, tag: str, random: bool, star: int = None) -> N
 @click.option('-a', '--all', '_all', is_flag=True, default=False, show_default=True,
               help='If this flag is added, pull all histories')
 def pull(_all=False):
-    assert DEVICE_AVAILABLE and IMG_PATH_EXISTS
+    assert ADB_AVAILABLE and IMG_PATH_EXISTS
 
     def pull_one(yande_history: YandeHistory):
         yande_history.set(commit=True, finish=True)
         dir_name = yande_history.get_folder_name()
-        target = f"{ROOT}/{dir_name}"
-        call(f'"{ADB_PATH}" -s {DEVICE_ID} shell "cd {target} && ls > out.txt"')
-        call(f'"{ADB_PATH}" -s {DEVICE_ID} pull {target}/out.txt ./')
-        call(f'"{ADB_PATH}" -s {DEVICE_ID} shell "rm {target}/out.txt"')
-
-        with open('out.txt', encoding='utf-8') as fn:
-            names = fn.read().split('\n')[0:-2]
-            ids = [int(re.match(r'\d+', name).group()) for name in names]
+        # target = f"{ADB_ROOT}/{dir_name}"
+        # call(f'"{ADB_PATH}" -s {DEVICE_ID} shell "cd {target} && ls > out.txt"')
+        # call(f'"{ADB_PATH}" -s {DEVICE_ID} pull {target}/out.txt ./')
+        # call(f'"{ADB_PATH}" -s {DEVICE_ID} shell "rm {target}/out.txt"')
+        #
+        # with open('out.txt', encoding='utf-8') as fn:
+        #     names = fn.read().split('\n')[0:-2]
+        DEVICE = get_device_by_platform(yande_history.platform)
+        device = DEVICE(dir_name)
+        names = device.listdir()
+        ids = [int(re.match(r'\d+', name).group()) for name in names]
         imgs = ss.query(Image).filter(Image.history == yande_history.history).all()
         count = 0
         imgs2remove = []
@@ -163,7 +177,8 @@ def pull(_all=False):
                         f.write('\n'.join(rm_failed_imgs))
                     print(f'{rm_success_flag} files failed to delete, see ./file_not_exists.txt for details')
 
-        call(f'"{ADB_PATH}" -s {DEVICE_ID} shell rm -rf {target}')
+        # call(f'"{ADB_PATH}" -s {DEVICE_ID} shell rm -rf {target}')
+        device.remove()
 
     if _all:
         input('are you sure?')
@@ -171,8 +186,8 @@ def pull(_all=False):
         for history in histories:
             pull_one(YandeHistory.select(history))
     else:
-        yande_history = YandeHistory.select()
-        pull_one(yande_history)
+        yande_history_ = YandeHistory.select()
+        pull_one(yande_history_)
 
     ss.commit()
 
@@ -309,10 +324,10 @@ def download_yande_imgs(amount: int = 0):
                 assert img.name
                 assert img.file_url
 
-                call(f'IDMan /d "{img.file_url}" /p "{DOWNLOAD_PATH}" /f "{img.name}" /a /n')
+                call(f'"{IDM_PATH}" /d "{img.file_url}" /p "{DOWNLOAD_PATH}" /f "{img.name}" /a /n')
                 img.status = STATUS.DOWNLOADING
 
-        call('IDMan /s')
+        call(f'"{IDM_PATH}" /s')
         ss.commit()
 
     start_idm_download()

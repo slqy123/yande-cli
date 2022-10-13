@@ -78,7 +78,7 @@ class LazyImport:
         self.module_name = module_name
         self.module = None
 
-    def __getattr__(self, funcname):
+    def __getattr__(self, func_name):
         if self.module is None:
             self.module = __import__(self.module_name)
-        return getattr(self.module, funcname)
+        return getattr(self.module, func_name)

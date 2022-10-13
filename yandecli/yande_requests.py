@@ -19,7 +19,7 @@ class BaseYandeSpider:
     INFO_KEY = ['id', 'file_ext', 'tags', 'file_url', 'author', 'creator_id', 'rating']
 
     def __init__(self, tags=None):
-        '''mode 可选择 refresh, 定时更新  以及all, 下载全部'''
+        """mode 可选择 refresh, 定时更新  以及all, 下载全部"""
 
         self.headers = {"User-Agent": "Mozilla/5.0 (Linux; Android 6.0; Nexus 5 Build/MRA58N) AppleWebKit/537.36 "
                                       "(KHTML, like Gecko) Chrome/91.0.4472.114 Mobile Safari/537.36"}
@@ -45,8 +45,6 @@ class BaseYandeSpider:
             self.tags = TAGS
         else:
             self.tags = tags
-
-        self.idm = IDM_PATH
 
         self.today = str(datetime.date.today())
         self.timestamp = int(datetime.datetime.today().timestamp())
@@ -223,13 +221,13 @@ class YandeDaily(BaseYandeSpider):
             begin += delta
 
     def run(self):
-        if not os.path.exists('infos.json'):
+        if not os.path.exists('../infos.json'):
             print('This is your first time to run, so the current time will be set to be your last update time. '
                   'Next time when you run this command, all images with TAGS in this period will be updated')
             self.settings = {'max_id': 0}
             self.img_result = [{'id': 0}]
         else:
-            with open('infos.json') as f:
+            with open('../infos.json') as f:
                 self.settings = json.loads(f.read())
             super(YandeDaily, self).run()
 
@@ -238,7 +236,7 @@ class YandeDaily(BaseYandeSpider):
         self.settings['max_id'] = max(self.settings['max_id'],
                                       max(ids))
         self.settings['last'] = str(datetime.date.today())
-        with open('infos.json', 'w') as f:
+        with open('../infos.json', 'w') as f:
             json.dump(self.settings, f)
 
 

@@ -2,7 +2,7 @@ from sqlalchemy import create_engine, Column, Integer, Text, ForeignKey, Date, B
 from sqlalchemy.orm import sessionmaker, relationship
 from sqlalchemy.ext.declarative import declarative_base
 
-from settings import TAGTYPE, RATING
+from settings import TAGTYPE, RATING, PLATFORM
 
 # from os import path
 # DB_PATH = path.split(__file__)[0] + '/test.db'
@@ -78,6 +78,7 @@ class Images2Tags(Base):
 
 
 class History(Base):
+    # 变动history字段后，对应的yandecli.history的init也要相应更改
     __tablename__ = 'history'
     id = Column(Integer, primary_key=True, autoincrement=True)
     date = Column(Date)
@@ -86,6 +87,7 @@ class History(Base):
     amount = Column(Integer)
     finish = Column(Boolean, default=False)
     img_star = Column(Integer)
+    platform = Column(Enum(PLATFORM))
 
 
 Tag.cache = Cache(Tag, 'name')

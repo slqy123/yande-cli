@@ -4,10 +4,10 @@ from enum import Enum
 IMG_PATH = "G:/yande/images"
 DOWNLOAD_PATH = 'F:/yande_dl'
 EXCEPTION_PATH = 'G:/yande/Exceptions'
-VIEW_PATH = r'G:\yande\view'
+VIEW_PATH = 'G:/yande/view'
 
 # 你的IDM路径和ADB路径，如果已经加入环境变量，直接写成程序名称即可
-IDM_PATH = r'"C:\Program Files (x86)\Internet Download Manager\IDMan.exe"'
+IDM_PATH = r'C:\Program Files (x86)\Internet Download Manager\IDMan.exe'
 ADB_PATH = r'C:\scoop\adb\adb.exe'
 # 运行 adb devices 第一列就是
 DEVICE_ID = 'QKXUT20611001197'
@@ -29,7 +29,7 @@ TAGS = ['bondage', 'loli', 'pee', 'vibrator',
 
 # 图片在手机中的存放位置
 # 在文件夹名称前加 '.' 可以让这个文件夹的内容不被qq，相册的软件探测到
-ROOT = "sdcard/ADM/.comic"
+ADB_ROOT = "sdcard/ADM/.comic"
 
 # 在根据tag请求图片时，每次请求的图片数量，最大为1000
 YANDE_ALL_UPDATE_SIZE = 1000
@@ -40,6 +40,7 @@ MB = 1024 * 1024
 CLEAR = "\033[1K\r"
 
 
+# Enums
 class STATUS:
     EXISTS = 0
     DELETED = 1
@@ -60,3 +61,8 @@ class RATING(Enum):
     SAFE = 's'
     QUESTIONABLE = 'q'
     EXPLICIT = 'e'
+
+
+class PLATFORM(Enum):
+    MOBILE = 'MOBILE'
+    PC = 'PC'
