@@ -89,5 +89,5 @@ class History(Base):
 
 
 Tag.cache = Cache(Tag, 'name')
-# Image.cache = Cache(Image, 'id')
+Image.cache = Cache(Image, 'id')
 Base.metadata.create_all(engine)

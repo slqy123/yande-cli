@@ -14,13 +14,10 @@ from settings import *
 from status import *
 from history import YandeHistory
 from utils import check_exists, call
-from yandeTime import YandeDaily, YandeId, YandeAll, TagTypeSpider
+from yande_requests import YandeDaily, YandeId, YandeAll, TagTypeSpider
 
 
 # TODO 增加在本地浏览，具体细节参加jupyter
-# 增加为tag添加type的spider(已完成)
-# 修改文件名增加作者信息和其他(文件名就只留id吧，push时再管tag和author)
-
 
 @click.group()
 def main_group():
@@ -92,7 +89,7 @@ def push(amount: int, times: int, tag: str, random: bool, star: int = None) -> N
         with trange(yande_history.amount) as t:
             for i in t:
                 img = imgs[i]
-                tags = ' '.join([t.name for t in img.tag_refs if t.type != TAGTYPE.GENERAL])
+                tags = ' '.join([t.name for t in img.tag_refs if t.type not in (TAGTYPE.GENERAL, TAGTYPE.CHARACTER)])
                 ext = img.name.rsplit('.', 1)[1]
                 t.set_description(f"id={img.id}")
                 call_res = call(

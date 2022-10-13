@@ -4,7 +4,10 @@ from enum import Enum
 IMG_PATH = "G:/yande/images"
 DOWNLOAD_PATH = 'F:/yande_dl'
 EXCEPTION_PATH = 'G:/yande/Exceptions'
+VIEW_PATH = r'G:\yande\view'
 
+# 你的IDM路径和ADB路径，如果已经加入环境变量，直接写成程序名称即可
+IDM_PATH = r'"C:\Program Files (x86)\Internet Download Manager\IDMan.exe"'
 ADB_PATH = r'C:\scoop\adb\adb.exe'
 # 运行 adb devices 第一列就是
 DEVICE_ID = 'QKXUT20611001197'
@@ -12,12 +15,20 @@ DEVICE_ID = 'QKXUT20611001197'
 # 更新的频率(天)，即如果一个图片的上次更新时间距离今天超过这个时间，则触发更新
 UPDATE_FREQ = 7
 
+# 此处设置你的代理
+PROXIES = {
+    'http': 'http://127.0.0.1:11223',
+    'https': 'http://127.0.0.1:11223'
+}
+
 # 默认的tag，update时会用
 TAGS = ['bondage', 'loli', 'pee', 'vibrator',
         'anal', 'dildo', 'anal_beads', 'masturbation', 'yuri',
-        'cunnilingus', 'fingering', 'pussy_juice', 'fellatio', 'handjob', 'nopan', 'nekomimi']
+        'cunnilingus', 'fingering', 'pussy_juice', 'fellatio',
+        'handjob', 'nopan', 'nekomimi', 'skirt_lift', 'tagme']
 
 # 图片在手机中的存放位置
+# 在文件夹名称前加 '.' 可以让这个文件夹的内容不被qq，相册的软件探测到
 ROOT = "sdcard/ADM/.comic"
 
 # 在根据tag请求图片时，每次请求的图片数量，最大为1000

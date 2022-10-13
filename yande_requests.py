@@ -1,16 +1,17 @@
+import datetime
 import json
 import os
-import sys
-
-import datetime
 import time
 
 import tqdm
-import re
+
 from database import ss, Image, Tag
-from settings import IMG_PATH, TAGS, CLEAR, STATUS, YANDE_ALL_UPDATE_SIZE, UPDATE_FREQ, TAGTYPE, RATING
+from settings import TAGS, CLEAR, STATUS, YANDE_ALL_UPDATE_SIZE, UPDATE_FREQ, TAGTYPE, RATING, IDM_PATH, \
+    PROXIES
 from utils import LazyImport
+
 grequests = LazyImport('grequests')
+
 
 # TODO 不依靠json文件，可以选择使用pickle来存储
 class BaseYandeSpider:
@@ -24,10 +25,7 @@ class BaseYandeSpider:
                                       "(KHTML, like Gecko) Chrome/91.0.4472.114 Mobile Safari/537.36"}
         # self.original_url = "https://oreno.imouto.us"
         self.original_url = "https://yande.re"
-        self.proxies = {
-            'http': 'http://127.0.0.1:11223',
-            'https': 'http://127.0.0.1:11223'
-        }
+        self.proxies = PROXIES
         self.post_url = self.original_url + "/post.json"
         self.output_dir = "./_all/"
         self.failed_urls = []
@@ -48,7 +46,7 @@ class BaseYandeSpider:
         else:
             self.tags = tags
 
-        self.idm = r'"C:\Program Files (x86)\Internet Download Manager\IDMan.exe"'
+        self.idm = IDM_PATH
 
         self.today = str(datetime.date.today())
         self.timestamp = int(datetime.datetime.today().timestamp())

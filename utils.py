@@ -81,5 +81,4 @@ class LazyImport:
     def __getattr__(self, funcname):
         if self.module is None:
             self.module = __import__(self.module_name)
-            print(self.module)
         return getattr(self.module, funcname)
