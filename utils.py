@@ -1,4 +1,4 @@
-from subprocess import run
+from subprocess import run, Popen, PIPE
 
 from database import *
 
@@ -71,6 +71,10 @@ def call(command):
     # return os.popen().read()
     result = run(command, check=True, capture_output=True, encoding='utf8')
     return result.stdout
+
+
+def call_in_bg(command):
+    Popen(command, stdout=PIPE)
 
 
 class LazyImport:

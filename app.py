@@ -12,10 +12,11 @@ import click
 from database import *
 from settings import *
 from yandecli.status import *
-from yandecli.history import YandeHistory
+from yandecli.tools.history import YandeHistory
 from utils import check_exists, call
-from yandecli.yande_requests import YandeDaily, YandeId, YandeAll, TagTypeSpider
-from yandecli.file_io import get_device_by_platform
+from yandecli.tools.yande_requests import YandeDaily, YandeId, YandeAll, TagTypeSpider
+from yandecli.tools.file_io import get_device_by_platform
+from yandecli.cli import plot
 
 CONTEXT_SETTINGS = dict(help_option_names=['-h', '--help'])
 
@@ -66,8 +67,12 @@ def status():
 @click.option('-p', '--platform', type=click.Choice(['MOBILE', 'PC']), default='MOBILE', show_default=True,
               help='the platform you want to push to')
 def push(amount: int, times: int, tag: str, random: bool, star: int = None, platform: str = 'MOBILE') -> None:
-    assert ADB_AVAILABLE and IMG_PATH_EXISTS
+    assert IMG_PATH_EXISTS
+    if platform == PLATFORM.MOBILE.value:
+        assert ADB_AVAILABLE
+
     DEVICE = get_device_by_platform(PLATFORM(platform))
+
     def _push():
         min_count = star if star is not None else ss.query(func.min(Image.count)).filter(
             Image.star == Image.count, Image.history.has(finish=True)).first()[0]
@@ -90,26 +95,17 @@ def push(amount: int, times: int, tag: str, random: bool, star: int = None, plat
 
         print(f"{len(imgs)} images in total from {yande_history.start} to {yande_history.end}")
 
-        # target = f'{ADB_ROOT}/{yande_history.get_folder_name()}'
-        # call(f'"{ADB_PATH}" -s {DEVICE_ID} shell "mkdir {target}"')
         device = DEVICE(yande_history.get_folder_name())
         with trange(yande_history.amount) as t:
             for i in t:
                 img = imgs[i]
-                tags = ' '.join([t.name for t in img.tag_refs if t.type not in (TAGTYPE.GENERAL, TAGTYPE.CHARACTER)])
-                ext = img.name.rsplit('.', 1)[1]
-                new_name = f'{img.id} {tags}.{ext}'
-                new_name = new_name.translate(str.maketrans(r'/\:*?"<>|', "_________"))
+                # TODO 要不要加相关标签
+                # tags = ' '.join([t.name for t in img.tag_refs if t.type not in (TAGTYPE.GENERAL, TAGTYPE.CHARACTER)])
+                # ext = img.name.rsplit('.', 1)[1]
+                # new_name = f'{img.id} {tags}.{ext}'
+                # new_name = new_name.translate(str.maketrans(r'/\:*?"<>|', "_________"))
                 t.set_description(f"id={img.id}")
-                # call_res = call(
-                #     f'"{ADB_PATH}" -s {DEVICE_ID} push "{IMG_PATH}/{img.name}" "{target}/{new_name}"')
-                # if '1 file pushed' in call_res:
-                #     size = int(re.search(r"(\d+) bytes", call_res).group(1)) / MB
-                #     t.set_postfix(size=f"{round(size, 2)}MB")
-                # else:
-                #     print('error! :: ', call_res)
-                #     return None
-                size = device.push(img.name, new_name)
+                size = device.push(img.name, f" [{i + 1}].".join(img.name.rsplit('.', 1)))
                 t.set_postfix(size=f"{round(size, 2)}MB")
                 img.history = yande_history.history
         print(f'push complete')
@@ -123,18 +119,12 @@ def push(amount: int, times: int, tag: str, random: bool, star: int = None, plat
 @click.option('-a', '--all', '_all', is_flag=True, default=False, show_default=True,
               help='If this flag is added, pull all histories')
 def pull(_all=False):
-    assert ADB_AVAILABLE and IMG_PATH_EXISTS
+    assert IMG_PATH_EXISTS
 
     def pull_one(yande_history: YandeHistory):
         yande_history.set(commit=True, finish=True)
         dir_name = yande_history.get_folder_name()
-        # target = f"{ADB_ROOT}/{dir_name}"
-        # call(f'"{ADB_PATH}" -s {DEVICE_ID} shell "cd {target} && ls > out.txt"')
-        # call(f'"{ADB_PATH}" -s {DEVICE_ID} pull {target}/out.txt ./')
-        # call(f'"{ADB_PATH}" -s {DEVICE_ID} shell "rm {target}/out.txt"')
-        #
-        # with open('out.txt', encoding='utf-8') as fn:
-        #     names = fn.read().split('\n')[0:-2]
+
         DEVICE = get_device_by_platform(yande_history.platform)
         device = DEVICE(dir_name)
         names = device.listdir()
@@ -177,7 +167,6 @@ def pull(_all=False):
                         f.write('\n'.join(rm_failed_imgs))
                     print(f'{rm_success_flag} files failed to delete, see ./file_not_exists.txt for details')
 
-        # call(f'"{ADB_PATH}" -s {DEVICE_ID} shell rm -rf {target}')
         device.remove()
 
     if _all:
@@ -192,71 +181,6 @@ def pull(_all=False):
     ss.commit()
 
 
-'''
-@click.command()
-@click.argument('count', type=int, default=0)
-def trans(count: int = 0):
-    # path = DOWNLOAD_PATH if not count else DOWNLOAD_PATH + '/all'
-    path = DOWNLOAD_PATH
-    confirm = False
-    imgs = os.listdir(path)
-    count = min(len(imgs), count)  # 防止图片数少于count时越界
-
-    imgs = imgs[:count] if count else imgs
-    img_count = len(imgs)
-    print(img_count)
-    for img in imgs:
-        if not img.startswith('yande'):  # 图片没有id，一般是以2开头
-            print('exception image: ', img)
-            shutil.move(path + '/' + img, EXCEPTION_PATH + '/' + img)
-            continue
-        imgProcessRes = process_image(img)
-        imgCheckRes = check_exists(Image, id=imgProcessRes['id'])
-        if not imgCheckRes:  # 数据库中没有这个图片
-            # 现在下载的时候已经会添加这个数据了，所以理论上应该一定会有，但是为了兼容旧的，留下来
-            ss.add(Image(**imgProcessRes))
-
-            print(imgProcessRes['id'], 'to add (with no item in database)')
-            shutil.move(path + '/' + img,
-                        IMG_PATH + '/' + imgProcessRes['name'])
-        else:  # 一般都是else
-            imgRes = imgCheckRes
-            if imgRes.name:  # 考虑是图片发生了更新，还是为空项目添加名字
-                img_count -= 1
-                print(f'for id = {imgRes.id}')
-                print(imgRes.name)
-                print(imgProcessRes['name'])
-                change = check_img_change(new_img=imgProcessRes['name'], exist_img=imgRes.name)
-            else:  # 是空项目
-                print(imgRes.id, 'to add')
-                imgRes.name = imgProcessRes['name']
-                imgRes.star = 0
-                shutil.move(path + '/' + img,
-                            IMG_PATH + '/' + imgProcessRes['name'])
-                continue
-            if change:  # 比较是否应该更新，也就是文件name是否更改
-                imgRes.name = imgProcessRes['name']
-                imgRes.tags = imgProcessRes['tags']
-                print(imgProcessRes['id'], 'to update')
-                shutil.move(path + '/' + img,
-                            IMG_PATH + '/' + imgProcessRes['name'])
-            else:
-                if not os.path.exists(IMG_PATH + '/' + imgRes.name):
-                    print('img not exists')
-                    shutil.move(path + '/' + imgRes.name,
-                                IMG_PATH + '/' + imgRes.name)
-                else:
-                    print('same image will be deleted')
-                    if not confirm:
-                        if input():
-                            confirm = True
-                    os.remove(path + '/' + img)
-
-    print(f'{img_count} added in total')
-    ss.commit()
-'''
-
-
 @click.command(help='Move download images from the download folder to image folder. \
 if amount not given, default to move all images')
 @click.argument('amount', type=int, default=0)
@@ -267,13 +191,16 @@ def add(amount: int = 0):
         all_download_imgs = all_download_imgs[: amount]
     with trange(len(all_download_imgs)) as t:
         for _, img in zip(t, all_download_imgs):
-            checked_img = check_exists(Image, name=img)
+            checked_img = check_exists(Image, id=int(img.split('.')[0]))
 
             if not checked_img:
                 print(f'delete img not found: {img}')
                 os.remove(os.path.join(DOWNLOAD_PATH, img))
+                ss.commit()
                 return
             t.set_description(f'id={checked_img.id}')
+            if img != checked_img.name:
+                checked_img.name = img
 
             if checked_img.count != 0:
                 print(f'error img {checked_img.id} count = {checked_img.count}')
@@ -324,6 +251,7 @@ def download_yande_imgs(amount: int = 0):
                 assert img.name
                 assert img.file_url
 
+                # call_in_bg(f'"{IDM_PATH}" /d "{img.file_url}" /p "{DOWNLOAD_PATH}" /f "{img.name}" /a /n')
                 call(f'"{IDM_PATH}" /d "{img.file_url}" /p "{DOWNLOAD_PATH}" /f "{img.name}" /a /n')
                 img.status = STATUS.DOWNLOADING
 
@@ -361,6 +289,7 @@ def update(amount: int = 0, mode: str = 'time', tag: str = '', start: int = 0):
     if ss.query(Image).count():
         exists_img_query = ss.query(Image).filter(Image.status == STATUS.EXISTS)
         last_date = exists_img_query.order_by(Image.last_update_date.asc()).first().last_update_date
+        print(f'last update date: {last_date}')
         img_query = exists_img_query.filter(Image.last_update_date == last_date)
     else:
         if mode != 'tag':
@@ -376,13 +305,15 @@ def update(amount: int = 0, mode: str = 'time', tag: str = '', start: int = 0):
         yande.run()
     elif mode == 'tag':
         def get_rand_tag() -> str:
+            print(last_date)
             rand_img = img_query.filter(Image.tags != None).order_by(func.random()).first()
+            YandeId([rand_img.id]).run()
             if not rand_img:
                 print('no proper tag found!')
                 rand_img = ss.query(Image).filter(Image.tags != None).order_by(func.random()).first()
             tags = rand_img.tags.split(' ')
             print(tags, rand_img.id)
-            rand_tag = sample(set(tags) & set(TAGS), 1)[0]
+            rand_tag = sample(list(set(tags) & set(TAGS)), 1)[0]
             print(f'choose img id={rand_img.id}, tag={rand_tag}')
             return rand_tag
 
@@ -404,6 +335,11 @@ def update(amount: int = 0, mode: str = 'time', tag: str = '', start: int = 0):
         yande.run()
 
 
+@click.group('plot')
+def plot_group():
+    pass
+
+
 def test():
     all_img = ss.query(Image).all()
     for img in all_img:
@@ -421,6 +357,9 @@ if __name__ == '__main__':
     main_group.add_command(status)
     main_group.add_command(update)
     main_group.add_command(clear)
+
+    main_group.add_command(plot_group)
+    plot_group.add_command(plot.star)
 
     main_group()
 

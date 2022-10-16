@@ -2,12 +2,12 @@ import datetime
 import json
 import os
 import time
+import logging
 
 import tqdm
 
 from database import ss, Image, Tag
-from settings import TAGS, CLEAR, STATUS, YANDE_ALL_UPDATE_SIZE, UPDATE_FREQ, TAGTYPE, RATING, IDM_PATH, \
-    PROXIES
+from settings import TAGS, CLEAR, STATUS, YANDE_ALL_UPDATE_SIZE, UPDATE_FREQ, TAGTYPE, RATING, IDM_PATH, PROXIES
 from utils import LazyImport
 
 grequests = LazyImport('grequests')
@@ -15,19 +15,19 @@ grequests = LazyImport('grequests')
 
 # TODO 不依靠json文件，可以选择使用pickle来存储
 class BaseYandeSpider:
+    proxies = PROXIES
     METHOD = 'BASE'
     INFO_KEY = ['id', 'file_ext', 'tags', 'file_url', 'author', 'creator_id', 'rating']
-
+    headers = {"User-Agent": "Mozilla/5.0 (Linux; Android 6.0; Nexus 5 Build/MRA58N) AppleWebKit/537.36 "
+                             "(KHTML, like Gecko) Chrome/91.0.4472.114 Mobile Safari/537.36"}
+    request_interval = 3
+    original_url = "https://yande.re"
+    post_url = original_url + "/post.json"
+    failed_urls = []
     def __init__(self, tags=None):
         """mode 可选择 refresh, 定时更新  以及all, 下载全部"""
 
-        self.headers = {"User-Agent": "Mozilla/5.0 (Linux; Android 6.0; Nexus 5 Build/MRA58N) AppleWebKit/537.36 "
-                                      "(KHTML, like Gecko) Chrome/91.0.4472.114 Mobile Safari/537.36"}
         # self.original_url = "https://oreno.imouto.us"
-        self.original_url = "https://yande.re"
-        self.proxies = PROXIES
-        self.post_url = self.original_url + "/post.json"
-        self.output_dir = "./_all/"
         self.failed_urls = []
         self.img_result = []
         self.urls = None
@@ -35,11 +35,10 @@ class BaseYandeSpider:
         self.total_count = 0
         self.created_img_count = 0
         self.updated_img_count = 0
-        self.pushed_img_count = 0
         self.deleted_img_count = 0
         self.download_img_count = 0
         self.no_update_img_count = 0
-        self.request_interval = 3
+
 
         if not tags:
             self.tags = TAGS
@@ -52,19 +51,19 @@ class BaseYandeSpider:
 
     def refresh(self):
         return []
-
-    def request_infos(self, urls, failed=False):
+    @classmethod
+    def request_infos(cls, urls, failed=False):
         if failed:
             print("waiting to download failed urls")
-            for i in range(self.request_interval):
-                print(f"{CLEAR}{self.request_interval - i}", end='')
+            for i in range(cls.request_interval):
+                print(f"{CLEAR}{cls.request_interval - i}", end='')
                 time.sleep(1)
             print('')
         img_infos = []
-        self.failed_urls = []
-        rs = (grequests.get(url, headers=self.headers, proxies=self.proxies,
-                            callback=self.request_callback) for url in urls)
-        for res in grequests.map(rs, size=3, exception_handler=self.handle):
+        cls.failed_urls = []
+        rs = (grequests.get(url, headers=cls.headers, proxies=cls.proxies,
+                            callback=cls.request_callback) for url in urls)
+        for res in grequests.map(rs, size=3, exception_handler=cls.handle):
             try:
                 resJson = json.loads(res.text)
             except Exception as _:
@@ -72,9 +71,9 @@ class BaseYandeSpider:
                     print('response is None')
                     continue
                 print(f"请求{res.request.url}失败")
-                self.failed_urls.append(res.request.url)
+                cls.failed_urls.append(res.request.url)
                 continue
-            if len(resJson) == 0 and self.METHOD == 'ID' and isinstance(resJson, list):
+            if len(resJson) == 0 and cls.METHOD == 'ID' and isinstance(resJson, list):
                 id_ = int(res.request.url.split('id:')[1])
                 img_infos.append({
                     'id': id_,
@@ -83,14 +82,14 @@ class BaseYandeSpider:
                 })
                 continue
             for item in resJson:
-                img_infos.append({key: item.get(key, None) for key in self.INFO_KEY})
+                img_infos.append({key: item.get(key, None) for key in cls.INFO_KEY})
                 if item.get('status', None) == 'deleted':
                     img_infos[-1]['status'] = 'deleted'
                     img_infos[-1]['flag_detail'] = {'reason': item["flag_detail"]["reason"]}
                     print(f'deleted image id:{item["id"]} for reason: {item["flag_detail"]["reason"]}')
 
-        if self.failed_urls:
-            return img_infos + self.request_infos(self.failed_urls, failed=True)
+        if cls.failed_urls:
+            return img_infos + cls.request_infos(cls.failed_urls, failed=True)
         else:
             return img_infos
 
@@ -109,9 +108,9 @@ class BaseYandeSpider:
         ss.commit()
 
         print(
-            "total: %d, create: %d, pushed: %d, deleted: %d, downloading: "
+            "total: %d, create: %d, deleted: %d, downloading: "
             "%d, update: %d, %d no need to update" %
-            (self.total_count, self.created_img_count, self.pushed_img_count, self.deleted_img_count,
+            (self.total_count, self.created_img_count, self.deleted_img_count,
              self.download_img_count, self.updated_img_count, self.no_update_img_count))
         return True
 
@@ -119,16 +118,15 @@ class BaseYandeSpider:
         def update_one(image):
             image.name = f'{info["id"]}.{info["file_ext"]}'
 
-            for key in ('tags', 'author', 'creator_id', 'file_url'):
+            for key in ('author', 'creator_id', 'file_url'):
                 setattr(image, key, info.get(key, None))
             setattr(image, "rating", RATING(info.get("rating", None)))
             image.last_update_date = datetime.date.today()
 
             # 更新多对多表的tag_refs，在考虑要不一要加入这个表
-            img.tag_refs.clear()
-            for tag in img.tags.split(' '):
-                tag_instance = Tag.cache.get_unique(tag)
-                img.tag_refs.append(tag_instance)
+            if image.tags != info.get('tags'):
+                setattr(image, 'tags', info.get('tags', None))
+                image.tag_refs = [Tag.cache.get_unique(tag) for tag in image.tags.split(' ')]
 
         assert info['id']
         check_res = Image.cache.check_exists(info['id'])
@@ -153,10 +151,10 @@ class BaseYandeSpider:
             self.created_img_count += 1
             return  # 此后都是数据库中有结果的图片了
 
-        if not img.history.finish:  # 图片已经被push了，不要干任何多余的事
-            self.log_fp.write(f'image {img.id} already pushed\n')
-            self.pushed_img_count += 1
-            return
+        # if not img.history.finish:  # 图片已经被push了，不要干任何多余的事
+        #     self.log_fp.write(f'image {img.id} already pushed\n')
+        #     self.pushed_img_count += 1
+        #     return
 
         if img.status == STATUS.DOWNLOADING:
             self.log_fp.write(f'image {img.id} is in download queue\n')
@@ -221,13 +219,13 @@ class YandeDaily(BaseYandeSpider):
             begin += delta
 
     def run(self):
-        if not os.path.exists('../infos.json'):
+        if not os.path.exists('./infos.json'):
             print('This is your first time to run, so the current time will be set to be your last update time. '
                   'Next time when you run this command, all images with TAGS in this period will be updated')
             self.settings = {'max_id': 0}
             self.img_result = [{'id': 0}]
         else:
-            with open('../infos.json') as f:
+            with open('./infos.json') as f:
                 self.settings = json.loads(f.read())
             super(YandeDaily, self).run()
 
@@ -236,7 +234,7 @@ class YandeDaily(BaseYandeSpider):
         self.settings['max_id'] = max(self.settings['max_id'],
                                       max(ids))
         self.settings['last'] = str(datetime.date.today())
-        with open('../infos.json', 'w') as f:
+        with open('./infos.json', 'w') as f:
             json.dump(self.settings, f)
 
 
