@@ -1,6 +1,6 @@
-from yandecli.status import ADB_AVAILABLE
+from yandecli.cli.status import ADB_AVAILABLE
 from yandecli.tools.file_io import get_device_by_platform
-from database import *
+from yandecli.tools.database import *
 from datetime import date
 import re
 

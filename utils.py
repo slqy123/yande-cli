@@ -1,6 +1,6 @@
 from subprocess import run, Popen, PIPE
 
-from database import *
+from yandecli.tools.database import *
 
 
 # def get_id_from_url(url: str) -> int:

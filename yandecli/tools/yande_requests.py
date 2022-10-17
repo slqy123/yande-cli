@@ -2,12 +2,11 @@ import datetime
 import json
 import os
 import time
-import logging
 
 import tqdm
 
-from database import ss, Image, Tag
-from settings import TAGS, CLEAR, STATUS, YANDE_ALL_UPDATE_SIZE, UPDATE_FREQ, TAGTYPE, RATING, IDM_PATH, PROXIES
+from yandecli.tools.database import ss, Image, Tag
+from settings import TAGS, CLEAR, STATUS, YANDE_ALL_UPDATE_SIZE, UPDATE_FREQ, TAGTYPE, RATING, PROXIES
 from utils import LazyImport
 
 grequests = LazyImport('grequests')
