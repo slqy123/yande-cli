@@ -13,7 +13,7 @@ from yandecli.cli.update import update
 
 CONTEXT_SETTINGS = dict(help_option_names=['-h', '--help'])
 
-
+# TODO hold 那些不在TAGS里的图片
 @click.group(context_settings=CONTEXT_SETTINGS)
 def main_group():
     pass
@@ -30,4 +30,3 @@ if __name__ == '__main__':
     main_group.add_command(plot_group)
 
     main_group()
-

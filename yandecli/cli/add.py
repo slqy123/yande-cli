@@ -2,9 +2,9 @@ import click
 import os
 
 from settings import DOWNLOAD_PATH
-from settings import DOWNLOAD_PATH_EXISTS, IMG_PATH_EXISTS, STATUS, IMG_PATH
-from utils import check_exists
-from yandecli.tools.database import *
+from settings import STATUS, IMG_PATH
+from yandecli.state_info import DOWNLOAD_PATH_EXISTS, IMG_PATH_EXISTS
+from database import *
 
 
 @click.command(help='Move download images from the download folder to image folder. \

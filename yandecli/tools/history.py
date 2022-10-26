@@ -1,6 +1,6 @@
-from yandecli.cli.status import ADB_AVAILABLE
+from yandecli.state_info import ADB_AVAILABLE
 from yandecli.tools.file_io import get_device_by_platform
-from yandecli.tools.database import *
+from database import *
 from datetime import date
 import re
 
@@ -47,9 +47,7 @@ class YandeHistory:
             return cls(history)
 
         histories = cls.get_all_unfinished_histories()
-        choices = []
-        for i, history in enumerate(histories):
-            choices.append(f'[{i}]:{cls.get_description_from_history(history)}')
+        choices = [f'[{i}]:{cls.get_description_from_history(history)}' for i, history in enumerate(histories)]
 
         import inquirer
         question = [
@@ -60,7 +58,7 @@ class YandeHistory:
             )
         ]
         ans = inquirer.prompt(question)
-        index = re.match(r'\[(\d+)', ans['choice']).group(1)
+        index = re.match(r'\[(\d+)', ans['choice'])[1]
         return cls(histories[int(index)])
 
     @classmethod
@@ -72,11 +70,13 @@ class YandeHistory:
         folder_name = cls.get_folder_name_from_history(history)
         DEVICE = get_device_by_platform(history.platform)
 
-#         img_num = int(call(f'"{ADB_PATH}" -s {DEVICE_ID} shell \
-# "cd {ADB_ROOT}/{folder_name} && ls -l |grep ^-|wc -l"')) if ADB_AVAILABLE else None
-        img_num = None if ((not ADB_AVAILABLE) and DEVICE.platform == PLATFORM.MOBILE) else len(DEVICE(folder_name).listdir())
+        #         img_num = int(call(f'"{ADB_PATH}" -s {DEVICE_ID} shell \
+        # "cd {ADB_ROOT}/{folder_name} && ls -l |grep ^-|wc -l"')) if ADB_AVAILABLE else None
+        img_num = None if ((not ADB_AVAILABLE) and DEVICE.platform == PLATFORM.MOBILE) else len(
+            DEVICE(folder_name).listdir())
         return f"id={history.id},image star = {history.img_star} pushed at {str(history.date)} \
-from {history.start} to {history.end} on {history.platform.value}" + ('' if img_num is None else f"({img_num}/{history.amount})")
+from {history.start} to {history.end} on {history.platform.value}" + (
+            '' if img_num is None else f"({img_num}/{history.amount})")
 
     @classmethod
     def commit_history(cls, history: History):
@@ -85,9 +85,9 @@ from {history.start} to {history.end} on {history.platform.value}" + ('' if img_
 
     @classmethod
     def get_all_unfinished_histories(cls):
-        if not ADB_AVAILABLE:
-            return cls.history_session.query(History).filter(History.finish == False, History.platform == PLATFORM.PC).all()
-        return cls.history_session.query(History).filter(History.finish == False).all()
+        return cls.history_session.query(History).filter(
+            History.finish == False).all() if ADB_AVAILABLE else cls.history_session.query(History).filter(
+            History.finish == False, History.platform == PLATFORM.PC).all()
 
     def get_folder_name(self):
         return self.get_folder_name_from_history(self.history)
@@ -104,4 +104,3 @@ from {history.start} to {history.end} on {history.platform.value}" + ('' if img_
 
     def commit(self):
         self.commit_history(self.history)
-

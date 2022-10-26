@@ -1,7 +1,7 @@
 import click
 
-from yandecli.tools.database import *
-from settings import ADB_AVAILABLE
+from database import *
+from yandecli.state_info import ADB_AVAILABLE
 from yandecli.tools.history import YandeHistory
 
 
@@ -20,9 +20,8 @@ def status():
 
     if not ADB_AVAILABLE:
         print('ADB is not available, can\'t get detailed history information from your mobile device')
-    choices = []
-    for i, history in enumerate(histories):
-        choices.append(f'[{i}]:{YandeHistory.get_description_from_history(history)}')
+    choices = [f'[{i}]:{YandeHistory.get_description_from_history(history)}' for i, history in enumerate(histories)]
+
     print(f"{len(histories)} push histories are not updated, they are:")
     print(*choices, sep='\n')
 

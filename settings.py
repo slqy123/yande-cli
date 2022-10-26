@@ -1,6 +1,4 @@
-import os
 from enum import Enum
-from utils import call
 
 # 分别是图片存放位置，下载图片临时存放位置，和push到PC中的图片的存放位置（此位置需与IMG_PATH位于相同盘符下）
 IMG_PATH = "G:/yande/images"
@@ -9,7 +7,8 @@ VIEW_PATH = 'G:/yande/view'
 
 # 你的IDM路径和ADB路径，如果已经加入环境变量，直接写成程序名称即可
 IDM_PATH = r'C:\Program Files (x86)\Internet Download Manager\IDMan.exe'
-ADB_PATH = r'C:\scoop\adb\adb.exe'
+# ADB_PATH = r'C:\scoop\adb\adb.exe'
+ADB_PATH = 'adb'
 # 运行 adb devices 第一列就是
 DEVICE_ID = 'QKXUT20611001197'
 
@@ -70,7 +69,4 @@ class PLATFORM(Enum):
 
 assert YANDE_ALL_UPDATE_SIZE <= 1000
 
-# 全局的状态信息
-IMG_PATH_EXISTS = os.path.exists(IMG_PATH)
-DOWNLOAD_PATH_EXISTS = os.path.exists(DOWNLOAD_PATH)
-ADB_AVAILABLE = True if DEVICE_ID in call(f'"{ADB_PATH}" devices') else False
+

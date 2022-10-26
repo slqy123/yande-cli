@@ -2,7 +2,7 @@ import plotext as plt
 # from utils import LazyImport
 # plt = LazyImport('plotext')
 import click
-from yandecli.tools.database import *
+from database import *
 from settings import STATUS
 import os
 

@@ -2,10 +2,11 @@ from random import randrange
 
 import click
 
-from yandecli.tools.database import *
-from settings import IMG_PATH_EXISTS, ADB_AVAILABLE, PLATFORM, STATUS
+from database import *
+from settings import PLATFORM, STATUS, RATING
 from yandecli.tools.file_io import get_device_by_platform
 from yandecli.tools.history import YandeHistory
+from yandecli.state_info import IMG_PATH_EXISTS, ADB_AVAILABLE
 
 
 @click.command(help='Push [AMOUNT] images to your mobile device [--num] times')
@@ -18,7 +19,10 @@ from yandecli.tools.history import YandeHistory
 @click.option('-s', '--star', type=int, default=None, help='the star of image you want to push')
 @click.option('-p', '--platform', type=click.Choice(['MOBILE', 'PC']), default='MOBILE', show_default=True,
               help='the platform you want to push to')
-def push(amount: int, times: int, tag: str, random: bool, star: int = None, platform: str = 'MOBILE') -> None:
+@click.option('-rt', '--rating', type=str, default='sqe',
+              help='the rating of the image can be s: safe, q: questionable, e: explicit')
+def push(amount: int, times: int, tag: str, random: bool,
+         star: int = None, platform: str = 'MOBILE', rating: str = 'sqe') -> None:
     assert IMG_PATH_EXISTS
     if platform == PLATFORM.MOBILE.value:
         assert ADB_AVAILABLE
@@ -33,7 +37,8 @@ def push(amount: int, times: int, tag: str, random: bool, star: int = None, plat
                                            Image.status == STATUS.EXISTS,
                                            Image.count == min_count,
                                            Image.history.has(finish=True),
-                                           Image.tags.contains(tag)  # 如果不传入tag，默认是空字符，此时等于没过滤
+                                           Image.tags.contains(tag),  # 如果不传入tag，默认是空字符，此时等于没过滤
+                                           Image.rating.in_([RATING(r) for r in rating])
                                            )
         if random:
             pages = (img_query.count() // amount) + 1
@@ -61,7 +66,7 @@ def push(amount: int, times: int, tag: str, random: bool, star: int = None, plat
                 size = device.push(img.name, f" [{i + 1}].".join(img.name.rsplit('.', 1)))
                 t.set_postfix(size=f"{round(size, 2)}MB")
                 img.history = yande_history.history
-        print(f'push complete')
+        print('push complete')
         ss.commit()
 
     for _ in range(times):

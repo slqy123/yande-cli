@@ -2,11 +2,11 @@ import os
 
 import click
 
-from yandecli.tools.database import *
-from settings import DOWNLOAD_PATH, IDM_PATH, IMG_PATH_EXISTS, IMG_PATH
+from database import *
+from settings import DOWNLOAD_PATH, IDM_PATH, IMG_PATH
 from settings import STATUS
 from utils import call
-
+from yandecli.state_info import IMG_PATH_EXISTS
 
 @click.command('dl', help='Add [AMOUNT] images to IDM\'s download query')
 @click.argument('amount', type=int, default=0)

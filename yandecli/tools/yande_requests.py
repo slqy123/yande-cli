@@ -5,7 +5,7 @@ import time
 
 import tqdm
 
-from yandecli.tools.database import ss, Image, Tag
+from database import ss, Image, Tag
 from settings import TAGS, CLEAR, STATUS, YANDE_ALL_UPDATE_SIZE, UPDATE_FREQ, TAGTYPE, RATING, PROXIES
 from utils import LazyImport
 
@@ -23,6 +23,7 @@ class BaseYandeSpider:
     original_url = "https://yande.re"
     post_url = original_url + "/post.json"
     failed_urls = []
+
     def __init__(self, tags=None):
         """mode 可选择 refresh, 定时更新  以及all, 下载全部"""
 
@@ -38,18 +39,14 @@ class BaseYandeSpider:
         self.download_img_count = 0
         self.no_update_img_count = 0
 
-
-        if not tags:
-            self.tags = TAGS
-        else:
-            self.tags = tags
-
+        self.tags = tags or TAGS
         self.today = str(datetime.date.today())
-        self.timestamp = int(datetime.datetime.today().timestamp())
+        self.timestamp = int(datetime.datetime.now().timestamp())
         self.log_fp = open(f'download_log/{self.METHOD}-{self.today}-{self.timestamp}.txt', 'w', encoding='utf8')
 
     def refresh(self):
         return []
+
     @classmethod
     def request_infos(cls, urls, failed=False):
         if failed:
@@ -187,7 +184,7 @@ class BaseYandeSpider:
         #     os.rename(old_path, new_path)
         #     return
 
-    def handle(self, req, info):
+    def handle(self, req, info=None):
         print(f"{req.url} 请求失败")
         self.failed_urls.append(req.url)
 
@@ -214,7 +211,7 @@ class YandeDaily(BaseYandeSpider):
         delta = datetime.timedelta(days=1)
         while begin <= end:
             for tag in self.tags:
-                yield "%s?limit=1000&tags=%s+date:%s+" % (self.post_url, tag, begin)
+                yield f"{self.post_url}?limit=1000&tags={tag}+date:{begin}+"
             begin += delta
 
     def run(self):
@@ -282,7 +279,7 @@ class TagTypeSpider(BaseYandeSpider):
         self.tag2dl = None
         self.batch_size = YANDE_ALL_UPDATE_SIZE
 
-        self.post_url = self.original_url + "/tag.json"
+        self.post_url = f"{self.original_url}/tag.json"
 
     def refresh(self):
         yield f"{self.post_url}?limit={self.batch_size}&type={self.tag2dl}&page={self.page}"
@@ -299,7 +296,3 @@ class TagTypeSpider(BaseYandeSpider):
     def process_update_info(self, info):
         tag = Tag.cache.get_unique(info['name'])
         tag.type = TAGTYPE(info['type'])
-
-
-if __name__ == '__main__':
-    pass

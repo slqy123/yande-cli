@@ -4,11 +4,8 @@ from sqlalchemy.ext.declarative import declarative_base
 
 from settings import TAGTYPE, RATING, PLATFORM
 
-# from os import path
-# DB_PATH = path.split(__file__)[0] + '/test.db'
-
 Base = declarative_base()
-engine = create_engine(f'sqlite:///data.db')
+engine = create_engine('sqlite:///data.db?check_same_thread=False')
 Session = sessionmaker(bind=engine)
 session = Session()
 ss = session
@@ -25,8 +22,7 @@ class Cache:
         if self.cache is None:
             self._fill_cache()
 
-        o = self.cache.get(key)
-        return o
+        return self.cache.get(key)
 
     def get_unique(self, key):
         o = self.check_exists(key)
@@ -88,6 +84,16 @@ class History(Base):
     finish = Column(Boolean, default=False)
     img_star = Column(Integer)
     platform = Column(Enum(PLATFORM))
+
+
+def check_exists(obj, **kwargs):
+    # print(kwargs)
+    res = ss.query(obj).filter_by(**kwargs).all()
+    if len(res) == 0:
+        return False
+    if len(res) == 1:
+        return res[0]
+    raise
 
 
 Tag.cache = Cache(Tag, 'name')

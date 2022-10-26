@@ -37,7 +37,7 @@ class ADB(BaseIO):
 
     def push(self, img_name: str, new_name: str = '') -> float:
         res = self._execute('push', f'{IMG_PATH}/{img_name}', f'{self.folder_path}/{new_name}')
-        size = int(re.search(r"(\d+) bytes", res).group(1)) / MB
+        size = int(re.search(r"(\d+) bytes", res)[1]) / MB
         return round(size, 2)
 
     def listdir(self):
@@ -46,7 +46,7 @@ class ADB(BaseIO):
         self._execute('shell', f'rm "{self.folder_path}/out.txt"')
 
         with open('out.txt', encoding='utf-8') as fn:
-            return fn.read().split('\n')[0:-2]
+            return fn.read().split('\n')[:-2]
 
     def remove(self):
         self._execute('shell', f'rm -rf "{self.folder_path}"')

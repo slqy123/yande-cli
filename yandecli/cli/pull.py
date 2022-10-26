@@ -3,10 +3,11 @@ import re
 
 import click
 
-from yandecli.tools.database import *
+from database import *
 from yandecli.tools.file_io import get_device_by_platform
 from yandecli.tools.history import YandeHistory
-from settings import STATUS, IMG_PATH, CLEAR, IMG_PATH_EXISTS
+from settings import STATUS, IMG_PATH, CLEAR
+from yandecli.state_info import IMG_PATH_EXISTS
 
 
 @click.command(help='pull a history from your mobile device and update the information')
@@ -35,14 +36,14 @@ def pull(_all=False):
                 if img.star == 0:
                     img.status = STATUS.DELETED
                     imgs2remove.append(f'{IMG_PATH}/{img.name}')
-                    print(CLEAR + 'delete', img.name, end="", flush=True)
+                    print(f'{CLEAR}delete', img.name, end="", flush=True)
                 else:
-                    print(CLEAR + 'filter', img.name, end='', flush=True)
+                    print(f'{CLEAR}filter', img.name, end='', flush=True)
         print(f'\n{len(imgs2remove)} images removed, {count - len(imgs2remove)} filtered')
         if imgs2remove:
             print("start removing files?(Y/n)", end="", flush=True)
             rm: str = input()
-            if rm.strip().lower() == 'y' or rm == '':
+            if rm.strip().lower() == 'y' or not rm:
                 rm_success_flag = True
                 rm_failed_imgs = []
 
