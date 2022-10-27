@@ -2,7 +2,7 @@ import click
 from yandecli.state_info import Data
 from database import *
 
-@click.group()
+@click.group(help='operations about image tags')
 def tags():
     pass
 

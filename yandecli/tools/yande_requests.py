@@ -188,10 +188,10 @@ class BaseYandeSpider:
         #     self.renamed_img_count += 1
         #     os.rename(old_path, new_path)
         #     return
-
-    def handle(self, req, info=None):
+    @classmethod
+    def handle(cls, req, info=None):
         print(f"{req.url} 请求失败")
-        self.failed_urls.append(req.url)
+        cls.failed_urls.append(req.url)
 
     @staticmethod
     def request_callback(req, *args, **kwargs):

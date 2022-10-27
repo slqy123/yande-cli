@@ -11,7 +11,7 @@ w, h = os.get_terminal_size()
 bar_width = w // 1.618
 
 
-@click.group('plot')
+@click.group('plot', help='show graphs about image infos')
 def plot_group():
     pass
 
@@ -30,7 +30,7 @@ def star():
 @click.command()
 def date():
     infos = ss.query(Image.last_update_date, func.count(Image.last_update_date)) \
-        .filter(Image.status == STATUS.EXISTS).group_by(Image.last_update_date).all()
+        .filter(Image.status == STATUS.EXISTS, Image.held == False).group_by(Image.last_update_date).all()
     plt.simple_bar([i[0] for i in infos], [i[1] for i in infos], width=bar_width)
     plt.show()
 
