@@ -6,8 +6,9 @@ import time
 import tqdm
 
 from database import ss, Image, Tag
-from settings import TAGS, CLEAR, STATUS, YANDE_ALL_UPDATE_SIZE, UPDATE_FREQ, TAGTYPE, RATING, PROXIES
+from settings import CLEAR, STATUS, YANDE_ALL_UPDATE_SIZE, UPDATE_FREQ, TAGTYPE, RATING, PROXIES
 from utils import LazyImport
+from yandecli.state_info import Data
 
 grequests = LazyImport('grequests')
 
@@ -39,7 +40,8 @@ class BaseYandeSpider:
         self.download_img_count = 0
         self.no_update_img_count = 0
 
-        self.tags = tags or TAGS
+        self.status_data = Data.get_data()
+        self.tags = tags or self.status_data.data.tags
         self.today = str(datetime.date.today())
         self.timestamp = int(datetime.datetime.now().timestamp())
         self.log_fp = open(f'download_log/{self.METHOD}-{self.today}-{self.timestamp}.txt', 'w', encoding='utf8')
@@ -112,6 +114,9 @@ class BaseYandeSpider:
 
     def process_update_info(self, info):
         def update_one(image):
+            if self.METHOD == 'DAILY' and (not (set(info['tags'].split(' ')) & self.status_data.data.tags)):
+                image.held = True
+
             image.name = f'{info["id"]}.{info["file_ext"]}'
 
             for key in ('author', 'creator_id', 'file_url'):
@@ -199,12 +204,8 @@ class BaseYandeSpider:
 class YandeDaily(BaseYandeSpider):
     METHOD = 'DAILY'
 
-    def __init__(self, *args, **kwargs):
-        super(YandeDaily, self).__init__(*args, **kwargs)
-        self.settings = {}
-
     def refresh(self):
-        begin = datetime.date(*[int(i) for i in self.settings['last'].split('-')])
+        begin = self.status_data.data.last_update_date
         end = datetime.date.today()
         print(begin, end)
         input('confirm?')
@@ -215,23 +216,9 @@ class YandeDaily(BaseYandeSpider):
             begin += delta
 
     def run(self):
-        if not os.path.exists('./infos.json'):
-            print('This is your first time to run, so the current time will be set to be your last update time. '
-                  'Next time when you run this command, all images with TAGS in this period will be updated')
-            self.settings = {'max_id': 0}
-            self.img_result = [{'id': 0}]
-        else:
-            with open('./infos.json') as f:
-                self.settings = json.loads(f.read())
-            super(YandeDaily, self).run()
-
-        ids = [info['id'] for info in self.img_result]
-
-        self.settings['max_id'] = max(self.settings['max_id'],
-                                      max(ids))
-        self.settings['last'] = str(datetime.date.today())
-        with open('./infos.json', 'w') as f:
-            json.dump(self.settings, f)
+        super(YandeDaily, self).run()
+        self.status_data.data.last_update_date = datetime.date.today()
+        self.status_data.save()
 
 
 class YandeAll(BaseYandeSpider):

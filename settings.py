@@ -22,10 +22,10 @@ PROXIES = {
 }
 
 # 默认的tag，update时可能会用
-TAGS = ['bondage', 'loli', 'pee', 'vibrator',
-        'anal', 'dildo', 'anal_beads', 'masturbation', 'yuri',
-        'cunnilingus', 'fingering', 'pussy_juice', 'fellatio',
-        'handjob', 'nopan', 'nekomimi', 'skirt_lift', 'tagme']
+# TAGS = ['bondage', 'loli', 'pee', 'vibrator',
+#         'anal', 'dildo', 'anal_beads', 'masturbation', 'yuri',
+#         'cunnilingus', 'fingering', 'pussy_juice', 'fellatio',
+#         'handjob', 'nopan', 'nekomimi', 'skirt_lift', 'tagme']
 
 # 图片在手机中的存放位置
 # 小提示：在文件夹名称前加 '.' 可以让这个文件夹下的内容不被qq，相册等软件探测到

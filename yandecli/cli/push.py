@@ -38,7 +38,8 @@ def push(amount: int, times: int, tag: str, random: bool,
                                            Image.count == min_count,
                                            Image.history.has(finish=True),
                                            Image.tags.contains(tag),  # 如果不传入tag，默认是空字符，此时等于没过滤
-                                           Image.rating.in_([RATING(r) for r in rating])
+                                           Image.rating.in_([RATING(r) for r in rating]),
+                                           Image.held == False
                                            )
         if random:
             pages = (img_query.count() // amount) + 1

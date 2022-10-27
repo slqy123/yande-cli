@@ -56,6 +56,7 @@ class Image(Base):
     creator_id = Column(Integer)
     status = Column(Integer)
     rating = Column(Enum(RATING))
+    held = Column(Boolean, default=False)
 
 
 class Tag(Base):

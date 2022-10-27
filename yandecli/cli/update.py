@@ -2,9 +2,11 @@ from random import sample
 
 import click
 from database import *
-from settings import STATUS, TAGS
+from settings import STATUS
 from yandecli.tools.yande_requests import YandeId, YandeAll, YandeDaily, TagTypeSpider
-from yandecli.state_info import IMG_PATH_EXISTS
+from yandecli.state_info import IMG_PATH_EXISTS, Data
+
+
 # TODO update 功能拆分
 
 @click.command()
@@ -21,7 +23,7 @@ def update(amount: int = 0, mode: str = 'time', tag: str = '', start: int = 0):
 
         id: update by the last update date of an image
 
-        tag: update by the given tag, make sure to add --tag option if you use this mode
+        tag: update by the given tag, make sure to add --tag option or set default tags if you use this mode
 
         time: update all images of default tags from last update time to now,
         if the option --tag is 'all', all images no matter what tags will be updated
@@ -32,7 +34,7 @@ def update(amount: int = 0, mode: str = 'time', tag: str = '', start: int = 0):
     assert IMG_PATH_EXISTS
 
     if ss.query(Image).count():
-        exists_img_query = ss.query(Image).filter(Image.status == STATUS.EXISTS)
+        exists_img_query = ss.query(Image).filter(Image.status == STATUS.EXISTS, Image.held == False)
         last_date = exists_img_query.order_by(Image.last_update_date.asc()).first().last_update_date
         print(f'last update date: {last_date}')
         img_query = exists_img_query.filter(Image.last_update_date == last_date)
@@ -49,6 +51,8 @@ def update(amount: int = 0, mode: str = 'time', tag: str = '', start: int = 0):
         yande = YandeId(ids=ids)
         yande.run()
     elif mode == 'tag':
+        status_data = Data.get_data()
+
         def get_rand_tag() -> str:
             print(last_date)
             rand_img = img_query.filter(Image.tags != None).order_by(func.random()).first()
@@ -58,15 +62,14 @@ def update(amount: int = 0, mode: str = 'time', tag: str = '', start: int = 0):
                 rand_img = ss.query(Image).filter(Image.tags != None).order_by(func.random()).first()
             tags = rand_img.tags.split(' ')
             print(tags, rand_img.id)
-            rand_tag = sample(list(set(tags) & set(TAGS)), 1)[0]
+            rand_tag = sample(list(set(tags) & status_data.data.tags), 1)[0]
             print(f'choose img id={rand_img.id}, tag={rand_tag}')
             return rand_tag
 
         tag: str = tag or get_rand_tag()
-        if tag not in TAGS:
-            user_input = input('this tag is not in the default tags, still want to update?(y/N)')
-            if user_input.strip().lower() == 'n' or user_input.strip() == '':
-                return
+        if tag not in status_data.data.tags:
+            print('this tag is not in the default tags, please add it to default before update.')
+            return
 
         yande = YandeAll(tags=[tag], from_page=start)
         yande.run()
