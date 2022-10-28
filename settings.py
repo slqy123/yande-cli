@@ -13,7 +13,7 @@ ADB_PATH = 'adb'
 DEVICE_ID = 'QKXUT20611001197'
 
 # 更新的频率(天)，在update时，即如果一个图片的上次更新时间距离今天超过这个时间，则触发更新
-UPDATE_FREQ = 1
+UPDATE_FREQ = 7
 
 # 此处设置你的代理
 PROXIES = {

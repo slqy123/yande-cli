@@ -3,7 +3,7 @@ import click
 from database import *
 from yandecli.state_info import ADB_AVAILABLE
 from yandecli.tools.history import YandeHistory
-
+from yandecli.state_info import Data
 
 @click.command(help='Show the current information of your images')
 def status():
@@ -25,10 +25,8 @@ def status():
     print(f"{len(histories)} push histories are not updated, they are:")
     print(*choices, sep='\n')
 
-    import json
     from datetime import date
-    with open('infos.json') as f:
-        settings = json.loads(f.read())
-    last_download_date = date.fromisoformat(settings['last'])
+    d = Data.get_data()
+    last_download_date = d.data.last_update_date
     day_pass = date.today() - last_download_date
     print(f'last download date is {last_download_date} which is {day_pass.days} days ago')

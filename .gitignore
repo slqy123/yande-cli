@@ -12,3 +12,5 @@ test.py
 download_log/
 download_cache.txt
 script.ipynb
+/data.db
+/data.pickle
