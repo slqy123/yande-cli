@@ -1,6 +1,7 @@
 import os
 
-from settings import ADB_PATH, DEVICE_ID, ADB_ROOT, IMG_PATH, MB, VIEW_PATH, PLATFORM
+from settings import ADB_PATH, DEVICE_ID, ADB_ROOT, MB, PLATFORM
+from yandecli.state_info import IMG_PATH, VIEW_PATH
 from utils import call
 import re
 import shutil
@@ -8,6 +9,7 @@ import shutil
 
 class BaseIO:
     platform = None
+
     def __init__(self, folder_name):
         self.folder = folder_name
         self.folder_path = f'{ADB_ROOT if self.platform == PLATFORM.MOBILE else VIEW_PATH}/{self.folder}'
@@ -28,6 +30,7 @@ class BaseIO:
 
 class ADB(BaseIO):
     platform = PLATFORM.MOBILE
+
     @staticmethod
     def _execute(*args: str) -> str:
         return call((ADB_PATH, '-s', DEVICE_ID, *args))
@@ -54,6 +57,7 @@ class ADB(BaseIO):
 
 class OS(BaseIO):
     platform = PLATFORM.PC
+
     def mkdir(self):
         os.makedirs(self.folder_path, exist_ok=True)
 

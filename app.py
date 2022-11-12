@@ -11,10 +11,11 @@ from yandecli.cli.push import push
 from yandecli.cli.download import download_yande_imgs, clear
 from yandecli.cli.update import update
 from yandecli.cli.tags import tags
+from yandecli.cli.domain import domain
+
 
 CONTEXT_SETTINGS = dict(help_option_names=['-h', '--help'])
 
-# TODO hold 那些不在TAGS里的图片
 @click.group(context_settings=CONTEXT_SETTINGS)
 def main_group():
     pass
@@ -30,5 +31,6 @@ if __name__ == '__main__':
     main_group.add_command(clear)
     main_group.add_command(plot_group)
     main_group.add_command(tags)
-
+    main_group.add_command(domain)
     main_group()
+

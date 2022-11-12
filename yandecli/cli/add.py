@@ -1,16 +1,15 @@
 import click
-import os
-
-from settings import DOWNLOAD_PATH
-from settings import STATUS, IMG_PATH
-from yandecli.state_info import DOWNLOAD_PATH_EXISTS, IMG_PATH_EXISTS
-from database import *
 
 
 @click.command(help='Move download images from the download folder to image folder. \
 if amount not given, default to move all images')
 @click.argument('amount', type=int, default=0)
 def add(amount: int = 0):
+    from settings import STATUS
+    from yandecli.state_info import DOWNLOAD_PATH_EXISTS, IMG_PATH_EXISTS, DOWNLOAD_PATH, IMG_PATH
+    from database import check_exists, Image, ss
+    import os
+
     from tqdm import trange
     import shutil
     assert DOWNLOAD_PATH_EXISTS and IMG_PATH_EXISTS

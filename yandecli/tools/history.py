@@ -6,7 +6,6 @@ import re
 
 
 class YandeHistory:
-    history_session = ss
 
     def __init__(self, history: History):
         self.history = history
@@ -18,6 +17,7 @@ class YandeHistory:
         self.img_star = history.img_star
         self.finish = history.finish
         self.platform = history.platform
+        self.domain = history.domain
 
     @classmethod
     def create_new(cls, imgs, platform: PLATFORM) -> 'YandeHistory':
@@ -35,8 +35,8 @@ class YandeHistory:
             img_star=min_star,
             platform=platform
         )
-        cls.history_session.add(history)
-        cls.history_session.commit()
+        ss.add(history)
+        ss.commit()
         # self.folder_name = self.get_folder_name_from_history(self.history)
 
         return cls(history)
@@ -74,19 +74,19 @@ class YandeHistory:
         # "cd {ADB_ROOT}/{folder_name} && ls -l |grep ^-|wc -l"')) if ADB_AVAILABLE else None
         img_num = None if ((not ADB_AVAILABLE) and DEVICE.platform == PLATFORM.MOBILE) else len(
             DEVICE(folder_name).listdir())
-        return f"id={history.id},image star = {history.img_star} pushed at {str(history.date)} \
+        return f"id={history.id}, domain={history.domain}, image star = {history.img_star} pushed at {str(history.date)} \
 from {history.start} to {history.end} on {history.platform.value}" + (
             '' if img_num is None else f"({img_num}/{history.amount})")
 
     @classmethod
     def commit_history(cls, history: History):
-        cls.history_session.add(history)
-        cls.history_session.commit()
+        ss.add(history)
+        ss.commit()
 
     @classmethod
     def get_all_unfinished_histories(cls):
-        return cls.history_session.query(History).filter(
-            History.finish == False).all() if ADB_AVAILABLE else cls.history_session.query(History).filter(
+        return history_query(History).filter(
+            History.finish == False).all() if ADB_AVAILABLE else history_query(History).filter(
             History.finish == False, History.platform == PLATFORM.PC).all()
 
     def get_folder_name(self):

@@ -8,7 +8,7 @@ import tqdm
 from database import ss, Image, Tag
 from settings import CLEAR, STATUS, YANDE_ALL_UPDATE_SIZE, UPDATE_FREQ, TAGTYPE, RATING, PROXIES
 from utils import LazyImport
-from yandecli.state_info import Data
+from yandecli.state_info import data
 
 grequests = LazyImport('grequests')
 
@@ -17,12 +17,10 @@ grequests = LazyImport('grequests')
 class BaseYandeSpider:
     proxies = PROXIES
     METHOD = 'BASE'
-    INFO_KEY = ['id', 'file_ext', 'tags', 'file_url', 'author', 'creator_id', 'rating']
+    INFO_KEY = ['id', 'tags', 'file_url', 'author', 'creator_id', 'rating']  # file_ext 删去，因为好像只有yande才会有这个信息
     headers = {"User-Agent": "Mozilla/5.0 (Linux; Android 6.0; Nexus 5 Build/MRA58N) AppleWebKit/537.36 "
                              "(KHTML, like Gecko) Chrome/91.0.4472.114 Mobile Safari/537.36"}
     request_interval = 3
-    original_url = "https://yande.re"
-    post_url = original_url + "/post.json"
     failed_urls = []
 
     def __init__(self, tags=None):
@@ -40,8 +38,13 @@ class BaseYandeSpider:
         self.download_img_count = 0
         self.no_update_img_count = 0
 
-        self.status_data = Data.get_data()
-        self.tags = tags or self.status_data.data.tags
+        self.instances2add = []
+
+        self.status_data = data
+        self.tags = tags or self.status_data.tags
+        self.original_url = self.status_data.data.domain.URL
+        self.post_url = f"{self.original_url}/post.json"
+
         self.today = str(datetime.date.today())
         self.timestamp = int(datetime.datetime.now().timestamp())
         self.log_fp = open(f'download_log/{self.METHOD}-{self.today}-{self.timestamp}.txt', 'w', encoding='utf8')
@@ -103,6 +106,9 @@ class BaseYandeSpider:
             for i, info in zip(progress, self.img_result):
                 progress.set_description(f"id={info['id']}")
                 self.process_update_info(info)
+
+        ss.add_all(self.instances2add)
+        self.instances2add = []
         ss.commit()
 
         print(
@@ -114,10 +120,11 @@ class BaseYandeSpider:
 
     def process_update_info(self, info):
         def update_one(image):
-            if self.METHOD == 'DAILY' and (not (set(info['tags'].split(' ')) & self.status_data.data.tags)):
+            if self.METHOD == 'DAILY' and (not (set(info['tags'].split(' ')) & self.status_data.tags)):
                 image.held = True
 
-            image.name = f'{info["id"]}.{info["file_ext"]}'
+            file_ext = info['file_url'].rsplit('.', 1)[1]
+            image.name = f'{info["id"]}.{file_ext}'
 
             for key in ('author', 'creator_id', 'file_url'):
                 setattr(image, key, info.get(key, None))
@@ -128,6 +135,7 @@ class BaseYandeSpider:
             if image.tags != info.get('tags'):
                 setattr(image, 'tags', info.get('tags', None))
                 image.tag_refs = [Tag.cache.get_unique(tag) for tag in image.tags.split(' ')]
+                # self.instances2add.extend(image.tag_refs)
 
         assert info['id']
         check_res = Image.cache.check_exists(info['id'])
@@ -136,7 +144,7 @@ class BaseYandeSpider:
             img = check_res
         else:
             img = Image(id=info['id'], star=0, status=STATUS.QUEUING)
-            ss.add(img)
+            self.instances2add.append(img)
 
         if info.get('status') == 'deleted':
             img.status = STATUS.DELETED
@@ -205,7 +213,7 @@ class YandeDaily(BaseYandeSpider):
     METHOD = 'DAILY'
 
     def refresh(self):
-        begin = self.status_data.data.last_update_date
+        begin = self.status_data.last_update_date
         end = datetime.date.today()
         print(begin, end)
         input('confirm?')
@@ -217,7 +225,7 @@ class YandeDaily(BaseYandeSpider):
 
     def run(self):
         super(YandeDaily, self).run()
-        self.status_data.data.last_update_date = datetime.date.today()
+        self.status_data.last_update_date = datetime.date.today()
         self.status_data.save()
 
 
@@ -283,3 +291,4 @@ class TagTypeSpider(BaseYandeSpider):
     def process_update_info(self, info):
         tag = Tag.cache.get_unique(info['name'])
         tag.type = TAGTYPE(info['type'])
+        self.instances2add.append(tag)

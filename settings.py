@@ -1,9 +1,39 @@
 from enum import Enum
+from dataclasses import dataclass
+from typing import Mapping
 
-# 分别是图片存放位置，下载图片临时存放位置，和push到PC中的图片的存放位置（此位置需与IMG_PATH位于相同盘符下）
-IMG_PATH = "G:/yande/images"
-DOWNLOAD_PATH = 'F:/yande_dl'
-VIEW_PATH = 'G:/yande/view'
+
+# 分别是网站网址，图片存放位置，下载图片临时存放位置，和push到PC中的图片的存放位置（此位置需与IMG_PATH位于相同盘符下）
+@dataclass
+class _DOMAIN:
+    URL: str
+    IMG_PATH: str
+    DOWNLOAD_PATH: str
+    VIEW_PATH: str
+
+
+# 增加此处配置的同时，要对下方Enum里的DOMAIN的配置也进行增加
+DOMAINS: Mapping[str, _DOMAIN] = {
+    'YANDE': _DOMAIN(
+        URL='https://yande.re',
+        IMG_PATH="G:/yande/images",
+        DOWNLOAD_PATH='F:/yande_dl',
+        VIEW_PATH='G:/yande/view'
+    ),
+    'KONACHAN': _DOMAIN(
+        URL='https://konachan.com',
+        IMG_PATH="G:/yande/others/kona",
+        DOWNLOAD_PATH='F:/kona_dl',
+        VIEW_PATH='G:/yande/kona_view'
+    ),
+    'LOLIBOORU': _DOMAIN(
+        URL='https://lolibooru.moe',
+        IMG_PATH="G:/yande/others/lolibooru",
+        DOWNLOAD_PATH='F:/lolibooru_dl',
+        VIEW_PATH='G:/yande/lolibooru_view'
+    ),
+
+}
 
 # 你的IDM路径和ADB路径，如果已经加入环境变量，直接写成程序名称即可
 IDM_PATH = r'C:\Program Files (x86)\Internet Download Manager\IDMan.exe'
@@ -67,6 +97,10 @@ class PLATFORM(Enum):
     PC = 'PC'
 
 
+class DOMAIN(Enum):
+    YANDE = DOMAINS['YANDE']
+    KONACHAN = DOMAINS['KONACHAN']
+    LOLIBOORU = DOMAINS['LOLIBOORU']
+
+
 assert YANDE_ALL_UPDATE_SIZE <= 1000
-
-

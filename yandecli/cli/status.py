@@ -1,15 +1,19 @@
 import click
 
-from database import *
-from yandecli.state_info import ADB_AVAILABLE
-from yandecli.tools.history import YandeHistory
-from yandecli.state_info import Data
-
 @click.command(help='Show the current information of your images')
 def status():
+    from database import img_query, DOMAIN, Image, func
+    from yandecli.state_info import ADB_AVAILABLE
+    from yandecli.tools.history import YandeHistory
+    from yandecli.state_info import IMG_PATH_EXISTS, data
+
+    assert IMG_PATH_EXISTS
+
+    print(f'Current domain is {DOMAIN(data.data.domain).name}')
+
     # TODO 显示当前连接情况settings里的
-    total_num = ss.query(Image).count()
-    status_count = ss.query(Image.status, func.count(1)).group_by(Image.status).all()
+    total_num = img_query(Image).count()
+    status_count = img_query(Image.status, func.count(1)).group_by(Image.status).all()
     count_list = [0, 0, 0, 0]
     for index, count in status_count:
         count_list[index] = count
@@ -26,7 +30,7 @@ def status():
     print(*choices, sep='\n')
 
     from datetime import date
-    d = Data.get_data()
-    last_download_date = d.data.last_update_date
+    d = data
+    last_download_date = d.last_update_date
     day_pass = date.today() - last_download_date
-    print(f'last download date is {last_download_date} which is {day_pass.days} days ago')
+    print(f'Last download date is {last_download_date} which is {day_pass.days} days ago')

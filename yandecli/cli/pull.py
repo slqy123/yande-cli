@@ -3,17 +3,16 @@ import re
 
 import click
 
-from database import *
-from yandecli.tools.file_io import get_device_by_platform
-from yandecli.tools.history import YandeHistory
-from settings import STATUS, IMG_PATH, CLEAR
-from yandecli.state_info import IMG_PATH_EXISTS
-
 
 @click.command(help='pull a history from your mobile device and update the information')
 @click.option('-a', '--all', '_all', is_flag=True, default=False, show_default=True,
               help='If this flag is added, pull all histories')
 def pull(_all=False):
+    from database import img_query, Image, ss
+    from yandecli.tools.file_io import get_device_by_platform
+    from yandecli.tools.history import YandeHistory
+    from settings import STATUS, CLEAR
+    from yandecli.state_info import IMG_PATH_EXISTS, IMG_PATH
     assert IMG_PATH_EXISTS
 
     def pull_one(yande_history: YandeHistory):
@@ -24,7 +23,7 @@ def pull(_all=False):
         device = DEVICE(dir_name)
         names = device.listdir()
         ids = [int(re.match(r'\d+', name).group()) for name in names]
-        imgs = ss.query(Image).filter(Image.history == yande_history.history).all()
+        imgs = img_query(Image).filter(Image.history == yande_history.history).all()
         count = 0
         imgs2remove = []
         for img in imgs:
